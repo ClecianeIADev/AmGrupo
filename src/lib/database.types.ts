@@ -21,6 +21,7 @@ export type Database = {
           id: string
           opportunity_id: string
           title: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string | null
@@ -28,6 +29,7 @@ export type Database = {
           id?: string
           opportunity_id: string
           title: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string | null
@@ -35,6 +37,7 @@ export type Database = {
           id?: string
           opportunity_id?: string
           title?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -87,6 +90,7 @@ export type Database = {
           onde_esta: string | null
           phone: string | null
           status: string | null
+          user_id: string | null
           value: number | null
         }
         Insert: {
@@ -99,6 +103,7 @@ export type Database = {
           onde_esta?: string | null
           phone?: string | null
           status?: string | null
+          user_id?: string | null
           value?: number | null
         }
         Update: {
@@ -111,6 +116,7 @@ export type Database = {
           onde_esta?: string | null
           phone?: string | null
           status?: string | null
+          user_id?: string | null
           value?: number | null
         }
         Relationships: []
@@ -123,6 +129,7 @@ export type Database = {
           id: string
           name: string
           shipping_option: string | null
+          user_id: string | null
         }
         Insert: {
           address?: string | null
@@ -131,6 +138,7 @@ export type Database = {
           id?: string
           name: string
           shipping_option?: string | null
+          user_id?: string | null
         }
         Update: {
           address?: string | null
@@ -139,6 +147,7 @@ export type Database = {
           id?: string
           name?: string
           shipping_option?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -146,14 +155,17 @@ export type Database = {
         Row: {
           id: string
           name: string
+          user_id: string | null
         }
         Insert: {
           id?: string
           name: string
+          user_id?: string | null
         }
         Update: {
           id?: string
           name?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -169,6 +181,7 @@ export type Database = {
           primary_contact_name: string | null
           stage: string | null
           updated_at: string | null
+          user_id: string | null
           value: number | null
         }
         Insert: {
@@ -182,6 +195,7 @@ export type Database = {
           primary_contact_name?: string | null
           stage?: string | null
           updated_at?: string | null
+          user_id?: string | null
           value?: number | null
         }
         Update: {
@@ -195,6 +209,7 @@ export type Database = {
           primary_contact_name?: string | null
           stage?: string | null
           updated_at?: string | null
+          user_id?: string | null
           value?: number | null
         }
         Relationships: [
@@ -251,6 +266,7 @@ export type Database = {
           opportunity_id: string | null
           responsible_name: string | null
           status: string | null
+          user_id: string | null
         }
         Insert: {
           created_at?: string | null
@@ -262,6 +278,7 @@ export type Database = {
           opportunity_id?: string | null
           responsible_name?: string | null
           status?: string | null
+          user_id?: string | null
         }
         Update: {
           created_at?: string | null
@@ -273,6 +290,7 @@ export type Database = {
           opportunity_id?: string | null
           responsible_name?: string | null
           status?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -369,14 +387,17 @@ export type Database = {
         Row: {
           id: string
           name: string
+          user_id: string | null
         }
         Insert: {
           id?: string
           name: string
+          user_id?: string | null
         }
         Update: {
           id?: string
           name?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -384,14 +405,17 @@ export type Database = {
         Row: {
           id: string
           name: string
+          user_id: string | null
         }
         Insert: {
           id?: string
           name: string
+          user_id?: string | null
         }
         Update: {
           id?: string
           name?: string
+          user_id?: string | null
         }
         Relationships: []
       }

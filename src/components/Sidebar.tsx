@@ -12,6 +12,7 @@ import {
   Settings,
   LogOut
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function Sidebar({ currentView, setCurrentView }: { currentView: string, setCurrentView: (v: string) => void }) {
   return (
@@ -81,9 +82,14 @@ export function Sidebar({ currentView, setCurrentView }: { currentView: string, 
           <Settings size={20} />
           Settings
         </button>
-        <button className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-all">
-          <LogOut size={20} />
-          Logout
+        <button
+          onClick={async () => {
+            await supabase.auth.signOut();
+          }}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-all font-medium group"
+        >
+          <LogOut size={20} className="group-hover:text-red-600 transition-colors" />
+          Sair
         </button>
       </div>
     </aside>
