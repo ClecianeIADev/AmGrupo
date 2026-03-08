@@ -419,6 +419,51 @@ export type Database = {
         }
         Relationships: []
       }
+      user_emails: {
+        Row: {
+          attachments: Json | null
+          cc: string | null
+          cco: string | null
+          content: string | null
+          created_at: string | null
+          google_message_id: string | null
+          id: string
+          received_at: string | null
+          recipient: string | null
+          sender: string | null
+          subject: string | null
+          user_id: string
+        }
+        Insert: {
+          attachments?: Json | null
+          cc?: string | null
+          cco?: string | null
+          content?: string | null
+          created_at?: string | null
+          google_message_id?: string | null
+          id?: string
+          received_at?: string | null
+          recipient?: string | null
+          sender?: string | null
+          subject?: string | null
+          user_id: string
+        }
+        Update: {
+          attachments?: Json | null
+          cc?: string | null
+          cco?: string | null
+          content?: string | null
+          created_at?: string | null
+          google_message_id?: string | null
+          id?: string
+          received_at?: string | null
+          recipient?: string | null
+          sender?: string | null
+          subject?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

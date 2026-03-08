@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import {
   Gavel,
   HardHat,
@@ -21,6 +22,84 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
   const [activeMainTab, setActiveMainTab] = useState<'pipelines' | 'monitoramento'>('monitoramento');
   const [activeSubTab, setActiveSubTab] = useState<'nomeacoes' | 'intimacoes' | 'prazos' | 'atualizacoes'>('nomeacoes');
   const [isEmailDetailsModalOpen, setIsEmailDetailsModalOpen] = useState(false);
+
+  const [emails, setEmails] = useState<any[]>([]);
+  const [loadingEmails, setLoadingEmails] = useState(false);
+  const [selectedEmail, setSelectedEmail] = useState<any>(null);
+
+  useEffect(() => {
+    if (activeMainTab === 'monitoramento') {
+      fetchEmails();
+    }
+  }, [activeMainTab]);
+
+  const handleSyncEmails = async () => {
+    setLoadingEmails(true);
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session || !session.provider_token) {
+        alert('Para buscar novos e-mails, você precisa estar logado com sua conta do Google.\n\nPor favor, vá em "Sair" no menu esquerdo e faça o login usando o botão "Continuar com o Google" na tela inicial.');
+        await fetchEmails();
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('fetch_gmail_inbox', {
+        body: { providerToken: session.provider_token }
+      });
+
+      if (error) {
+        console.error('Edge Function Error:', error);
+        alert(`Erro ao sincronizar com o Gmail: ${error.message || 'Falha na requisição'}`);
+      } else if (data && data.error) {
+        alert(`Erro do Google: ${data.error}`);
+      }
+
+      // After syncing from Gmail, re-fetch from database
+      await fetchEmails();
+
+    } catch (err: any) {
+      console.error('Error syncing emails from Gmail:', err);
+      alert(`Ocorreu um erro ao tentar buscar e-mails: ${err.message}`);
+      await fetchEmails(); // Fallback to DB fetch
+    }
+  };
+
+  const fetchEmails = async () => {
+    setLoadingEmails(true);
+    try {
+      const { data, error } = await supabase
+        .from('user_emails')
+        .select('*')
+        .order('received_at', { ascending: false });
+
+      if (error) throw error;
+      setEmails(data || []);
+    } catch (err) {
+      console.error('Error fetching emails:', err);
+    } finally {
+      setLoadingEmails(false);
+    }
+  };
+
+  const formatEmailDate = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+
+    if (date.toDateString() === now.toDateString()) {
+      return `Hoje • ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) {
+      return `Ontem • ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    return `${date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')} • ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  };
+
   return (
     <main className="flex-1 overflow-y-auto p-6 lg:p-10 scroll-smooth bg-slate-50/50">
       <div className="max-w-[1600px] mx-auto flex flex-col">
@@ -225,8 +304,8 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
                 <h1 className="text-2xl font-bold text-slate-900">Monitoramento Jurídico</h1>
                 <p className="text-sm text-slate-500">Gerencie suas notificações processuais e prazos fatais.</p>
               </div>
-              <button className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2.5 rounded-lg shadow-sm shadow-primary/30 transition-all active:scale-95 font-medium text-sm">
-                <RefreshCw size={18} />
+              <button onClick={handleSyncEmails} className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2.5 rounded-lg shadow-sm shadow-primary/30 transition-all active:scale-95 font-medium text-sm">
+                <RefreshCw size={18} className={loadingEmails ? "animate-spin" : ""} />
                 Atualizar Base
               </button>
             </div>
@@ -250,112 +329,49 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
             {/* Monitoramento List */}
             <div className="flex flex-col gap-4">
 
-              {/* Card 1 */}
-              <div className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start shadow-sm hover:shadow-md transition-shadow">
-                <div className="size-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
-                  <Gavel size={24} className="fill-blue-500" />
+              {loadingEmails ? (
+                <div className="flex justify-center items-center py-12">
+                  <div className="animate-spin size-8 border-4 border-primary border-t-transparent rounded-full shadow-lg"></div>
                 </div>
-                <div className="flex-1 min-w-0 flex flex-col gap-3">
-                  <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">Tribunal de Justiça - SP (tj.sp.gov.br)</h3>
-                      <a href="#" className="text-sm text-blue-500 hover:underline">Processo 0012345-67.2023.8.26.0100</a>
+              ) : emails.length > 0 ? (
+                emails.map((email) => (
+                  <div key={email.id} className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start shadow-sm hover:shadow-md transition-shadow">
+                    <div className="size-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
+                      <Mail size={24} className="fill-slate-400" />
                     </div>
-                    <span className="text-xs text-slate-400 font-medium shrink-0">Hoje • 10:30 AM</span>
-                  </div>
-                  <p className="text-sm text-slate-600 leading-relaxed max-w-4xl">
-                    Intimação de sentença publicada no Diário Oficial. Prazo recursal iniciado conforme despacho de folhas 452. Favor analisar o teor da decisão para interposição de recurso cabível dentro do prazo legal.
-                  </p>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded uppercase">Urgente</span>
-                      <span className="px-2 py-1 text-[10px] font-bold text-yellow-600 bg-yellow-50 border border-yellow-100 rounded uppercase">Pendente</span>
+                    <div className="flex-1 min-w-0 flex flex-col gap-3">
+                      <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">{email.sender}</h3>
+                          <p className="text-sm font-medium text-blue-500">{email.subject}</p>
+                        </div>
+                        <span className="text-xs text-slate-400 font-medium shrink-0">{formatEmailDate(email.received_at)}</span>
+                      </div>
+                      <div className="text-sm text-slate-600 leading-relaxed max-w-4xl line-clamp-3" dangerouslySetInnerHTML={{ __html: email.content }} />
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
+                        <div className="flex items-center gap-2">
+                          {email.attachments && (email.attachments as any[]).length > 0 && (
+                            <span className="px-2 py-1 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded uppercase">{(email.attachments as any[]).length} Anexo(s)</span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedEmail(email);
+                            setIsEmailDetailsModalOpen(true);
+                          }}
+                          className={`${email.attachments && (email.attachments as any[]).length > 0 ? "px-6 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-primary" : "px-6 py-2 bg-primary hover:bg-blue-600 text-white"} text-sm font-medium rounded-lg transition-colors shadow-sm`}
+                        >
+                          Ver detalhes
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => setIsEmailDetailsModalOpen(true)}
-                      className="px-6 py-2 bg-primary hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
-                    >
-                      Ver detalhes
-                    </button>
                   </div>
+                ))
+              ) : (
+                <div className="text-center py-12 text-slate-500">
+                  Nenhum e-mail registrado. Clique em Atualizar Base para buscar novos e-mails.
                 </div>
-              </div>
-
-              {/* Card 2 */}
-              <div className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start shadow-sm hover:shadow-md transition-shadow">
-                <div className="size-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
-                  <Mail size={24} className="fill-slate-400" />
-                </div>
-                <div className="flex-1 min-w-0 flex flex-col gap-3">
-                  <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">Escritório Advocacia Associados</h3>
-                      <p className="text-sm text-slate-400">Documentação pendente - Cliente AM Grupo</p>
-                    </div>
-                    <span className="text-xs text-slate-400 font-medium shrink-0">Ontem • 16:45 PM</span>
-                  </div>
-                  <p className="text-sm text-slate-600 leading-relaxed max-w-4xl">
-                    Encaminhamos o anexo com a documentação solicitada para o caso 9982/23. Por favor, confirme o recebimento e valide se os documentos estão de acordo com o padrão exigido pelo tribunal...
-                  </p>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-1 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded uppercase">Lida</span>
-                    </div>
-                    <button
-                      onClick={() => setIsEmailDetailsModalOpen(true)}
-                      className="px-6 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-primary text-sm font-medium rounded-lg transition-colors shadow-sm"
-                    >
-                      Ver detalhes
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 3 */}
-              <div className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start shadow-sm hover:shadow-md transition-shadow">
-                <div className="size-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
-                  <Clock size={24} className="fill-blue-500" />
-                </div>
-                <div className="flex-1 min-w-0 flex flex-col gap-3">
-                  <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">Justiça Federal - TRF3</h3>
-                      <a href="#" className="text-sm text-blue-500 hover:underline">Agravo de Instrumento 5001234-88.2023.4.03.0000</a>
-                    </div>
-                    <span className="text-xs text-slate-400 font-medium shrink-0">12 Out • 09:15 AM</span>
-                  </div>
-                  <p className="text-sm text-slate-600 leading-relaxed max-w-4xl">
-                    Decisão monocrática proferida pelo relator. Concessão de efeito suspensivo deferida parcialmente. Necessidade de manifestação em até 15 dias úteis a contar da publicação oficial.
-                  </p>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-1 text-[10px] font-bold text-yellow-600 bg-yellow-50 border border-yellow-100 rounded uppercase">Pendente</span>
-                    </div>
-                    <button className="px-6 py-2 bg-primary hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
-                      Ver detalhes
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 4 - Prazo Fatal */}
-              <div className="bg-red-50 rounded-xl border border-red-200/60 p-6 flex flex-col md:flex-row gap-6 items-start shadow-sm hover:shadow-md transition-shadow">
-                <div className="size-12 rounded-xl bg-red-100 text-red-500 flex items-center justify-center shrink-0">
-                  <AlertTriangle size={24} className="fill-red-500" />
-                </div>
-                <div className="flex-1 min-w-0 flex flex-col gap-3">
-                  <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
-                    <div>
-                      <h3 className="text-base font-bold text-red-700">Alerta de Prazo Fatal</h3>
-                      <p className="text-sm font-semibold text-red-600">Manifestação Pericial - Processo Cível 1002233-11</p>
-                    </div>
-                    <span className="text-xs text-red-500 font-bold shrink-0 uppercase">Expira em 4H</span>
-                  </div>
-                  <p className="text-sm text-red-600/90 leading-relaxed max-w-4xl">
-                    ATENÇÃO: O prazo para manifestação sobre o laudo pericial encerra-se hoje às 23:59. O perito concluiu pela improcedência dos pedidos técnicos. Requer análise urgente da engenharia.
-                  </p>
-                </div>
-              </div>
+              )}
 
             </div>
           </>
@@ -364,7 +380,11 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
 
       <EmailDetailsModal
         isOpen={isEmailDetailsModalOpen}
-        onClose={() => setIsEmailDetailsModalOpen(false)}
+        onClose={() => {
+          setIsEmailDetailsModalOpen(false);
+          setSelectedEmail(null);
+        }}
+        email={selectedEmail}
       />
     </main>
   );

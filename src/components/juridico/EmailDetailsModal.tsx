@@ -4,10 +4,21 @@ import React from 'react';
 interface EmailDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
+    email?: any;
 }
 
-export function EmailDetailsModal({ isOpen, onClose }: EmailDetailsModalProps) {
-    if (!isOpen) return null;
+export function EmailDetailsModal({ isOpen, onClose, email }: EmailDetailsModalProps) {
+    if (!isOpen || !email) return null;
+
+    const formattedDate = new Date(email.received_at).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+
+    const attachments = (email.attachments as any[]) || [];
 
     return (
         <>
@@ -37,87 +48,75 @@ export function EmailDetailsModal({ isOpen, onClose }: EmailDetailsModalProps) {
                     {/* Main Title and Badge */}
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
                         <h1 className="text-2xl font-bold text-slate-900 leading-tight">
-                            Notificação de Prazo Processual - Processo 0012345-67.2023.8.19.0001
+                            {email.subject}
                         </h1>
                         <div className="shrink-0 pt-1">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-500 uppercase tracking-wide border border-red-100">
-                                <span className="text-red-500 font-bold">!</span>
-                                ALTA PRIORIDADE
-                            </span>
+                            {/* Static badge for now, could be dynamic based on email importance */}
                         </div>
                     </div>
 
                     {/* Email Metadata Grid */}
                     <div className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 mb-10 text-sm">
                         <span className="text-slate-500 text-right w-16">De:</span>
-                        <span className="text-slate-700 font-medium">tribunal@justica.jus.br</span>
+                        <span className="text-slate-700 font-medium">{email.sender}</span>
 
                         <span className="text-slate-500 text-right w-16">Para:</span>
-                        <span className="text-slate-700 font-medium">juridico@empresa.com.br</span>
+                        <span className="text-slate-700 font-medium">{email.recipient}</span>
 
-                        <span className="text-slate-500 text-right w-16">CC:</span>
-                        <span className="text-slate-700 font-medium">socio@empresa.com.br, gerente@juridico.com.br</span>
+                        {(email.cc || email.cco) && (
+                            <>
+                                {email.cc && (
+                                    <>
+                                        <span className="text-slate-500 text-right w-16">CC:</span>
+                                        <span className="text-slate-700 font-medium">{email.cc}</span>
+                                    </>
+                                )}
+                                {email.cco && (
+                                    <>
+                                        <span className="text-slate-500 text-right w-16">CCO:</span>
+                                        <span className="text-slate-700 font-medium">{email.cco}</span>
+                                    </>
+                                )}
+                            </>
+                        )}
 
                         <span className="text-slate-500 text-right w-16">Data:</span>
-                        <span className="text-slate-700 font-medium">24 de Outubro de 2023, 10:45</span>
+                        <span className="text-slate-700 font-medium">{formattedDate}</span>
                     </div>
 
                     {/* Email Body */}
                     <div className="text-slate-600 text-[15px] leading-relaxed space-y-5 mb-12">
-                        <p>Prezados,</p>
-                        <p>
-                            Informamos que foi publicado despacho referente ao processo em epígrafe (0012345-67.2023.8.19.0001). O prazo para manifestação formal da parte ré encerra-se em <strong className="font-bold text-slate-800">15 dias úteis</strong> a contar desta data de recebimento.
-                        </p>
-                        <p>
-                            Solicitamos a análise imediata dos documentos anexos para providências cabíveis junto ao juízo da 5ª Vara Cível. Ressaltamos que a ausência de manifestação dentro do prazo legal poderá acarretar em revelia ou preclusão de direitos processuais conforme o Art. 335 do CPC.
-                        </p>
-                        <div className="pt-2">
-                            <p>Atenciosamente,</p>
-                            <p className="font-bold text-slate-800">Secretaria Processual - Tribunal de Justiça</p>
-                        </div>
+                        <div dangerouslySetInnerHTML={{ __html: email.content || '' }} />
                     </div>
 
                     {/* Attachments Section */}
-                    <div className="bg-slate-50/80 rounded-2xl p-6 border border-slate-100">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Paperclip size={18} className="text-slate-700" />
-                            <h3 className="text-sm font-bold text-slate-800">Anexos (2 arquivos)</h3>
-                        </div>
-
-                        <div className="flex flex-col gap-3">
-                            {/* Attachment 1 - PDF */}
-                            <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className="size-10 rounded-lg bg-red-50 text-red-500 flex items-center justify-center shrink-0 border border-red-100">
-                                        <span className="font-bold text-xs">PDF</span>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-sm font-bold text-slate-800">Despacho_Citacao_Final.pdf</span>
-                                        <span className="text-xs text-slate-400">1.2 MB</span>
-                                    </div>
-                                </div>
-                                <button className="p-2 text-[#3B82F6] hover:bg-blue-50 rounded-lg transition-colors">
-                                    <Download size={20} />
-                                </button>
+                    {attachments.length > 0 && (
+                        <div className="bg-slate-50/80 rounded-2xl p-6 border border-slate-100">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Paperclip size={18} className="text-slate-700" />
+                                <h3 className="text-sm font-bold text-slate-800">Anexos ({attachments.length} arquivos)</h3>
                             </div>
 
-                            {/* Attachment 2 - DOCX */}
-                            <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className="size-10 rounded-lg bg-blue-50 text-[#3B82F6] flex items-center justify-center shrink-0 border border-blue-100">
-                                        <span className="font-bold text-xs">DOC</span>
+                            <div className="flex flex-col gap-3">
+                                {attachments.map((att: any, idx) => (
+                                    <div key={idx} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                                        <div className="flex items-center gap-4">
+                                            <div className="size-10 rounded-lg bg-blue-50 text-[#3B82F6] flex items-center justify-center shrink-0 border border-blue-100">
+                                                <span className="font-bold text-xs">{att.name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-bold text-slate-800">{att.name}</span>
+                                                <span className="text-xs text-slate-400">{att.size}</span>
+                                            </div>
+                                        </div>
+                                        <button className="p-2 text-[#3B82F6] hover:bg-blue-50 rounded-lg transition-colors">
+                                            <Download size={20} />
+                                        </button>
                                     </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-sm font-bold text-slate-800">Petição_Inicial_Digitalizada.docx</span>
-                                        <span className="text-xs text-slate-400">456 KB</span>
-                                    </div>
-                                </div>
-                                <button className="p-2 text-[#3B82F6] hover:bg-blue-50 rounded-lg transition-colors">
-                                    <Download size={20} />
-                                </button>
+                                ))}
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Footer Actions */}
