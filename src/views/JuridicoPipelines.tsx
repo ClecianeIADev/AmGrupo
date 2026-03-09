@@ -68,9 +68,15 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
   const fetchEmails = async () => {
     setLoadingEmails(true);
     try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.user) {
+        throw new Error('Usuário não autenticado.');
+      }
+
       const { data, error } = await supabase
         .from('user_emails')
         .select('*')
+        .eq('user_id', session.user.id)
         .order('received_at', { ascending: false });
 
       if (error) throw error;
