@@ -1,6 +1,10 @@
 import { Menu, Search, Bell, ChevronDown, Plus, Pencil, Save, Download } from 'lucide-react';
+import { User } from '@supabase/supabase-js';
 
-export function Header({ currentView }: { currentView: string }) {
+export function Header({ currentView, user }: { currentView: string; user?: User }) {
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuário';
+  const userAvatar = user?.user_metadata?.avatar_url || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(userName) + '&background=0D8ABC&color=fff';
+
   return (
     <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10 shrink-0">
       <div className="flex items-center gap-4">
@@ -201,9 +205,9 @@ export function Header({ currentView }: { currentView: string }) {
         <div className="h-8 w-[1px] bg-slate-200 mx-1"></div>
 
         <button className="flex items-center gap-3 pl-2 rounded-lg hover:bg-slate-50 transition-colors p-1 pr-2 focus:outline-none focus:ring-0">
-          <img src="https://i.pravatar.cc/150?u=alex" alt="Alex Moraes" className="size-9 rounded-full border border-slate-200 object-cover" />
+          <img src={userAvatar} alt={userName} className="size-9 rounded-full border border-slate-200 object-cover" />
           <div className="hidden lg:flex flex-col items-start text-sm shrink-0">
-            <span className="font-semibold text-slate-900 leading-tight">Alex Moraes</span>
+            <span className="font-semibold text-slate-900 leading-tight">{userName}</span>
             <span className="text-slate-500 text-xs leading-tight">Admin</span>
           </div>
           <ChevronDown size={18} className="text-slate-400 hidden lg:block" />

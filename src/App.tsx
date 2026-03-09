@@ -66,7 +66,7 @@ export default function App() {
     <div className="font-display bg-background-light text-slate-900 overflow-hidden h-screen flex">
       <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        <Header currentView={currentView} />
+        <Header currentView={currentView} user={session.user} />
         {currentView === 'dashboard' && <Dashboard />}
         {currentView === 'cadastro-clientes' && <CadastroClientes />}
         {currentView === 'kanban' && <Kanban onNavigate={setCurrentView} onSelectOpportunity={setSelectedOpportunityId} />}
