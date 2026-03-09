@@ -20,7 +20,7 @@ import { EmailDetailsModal } from '../components/juridico/EmailDetailsModal';
 
 export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) => void }) {
   const [activeMainTab, setActiveMainTab] = useState<'pipelines' | 'monitoramento'>('pipelines');
-  const [activeSubTab, setActiveSubTab] = useState<'nomeacoes' | 'intimacoes' | 'prazos' | 'atualizacoes'>('nomeacoes');
+  const [activeSubTab, setActiveSubTab] = useState<'todos' | 'nomeacoes' | 'intimacoes' | 'prazos' | 'atualizacoes'>('todos');
   const [isEmailDetailsModalOpen, setIsEmailDetailsModalOpen] = useState(false);
 
   const [emails, setEmails] = useState<any[]>([]);
@@ -312,7 +312,7 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
 
             {/* Monitoramento Tabs */}
             <div className="flex items-center gap-8 mb-6 border-b border-slate-200">
-              {['Nomeações', 'Intimações', 'Prazos', 'Atualizações'].map((tabLabel) => {
+              {['Todos', 'Nomeações', 'Intimações', 'Prazos', 'Atualizações'].map((tabLabel) => {
                 const tabKey = tabLabel.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") as any;
                 return (
                   <button
@@ -334,56 +334,68 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
                   <div className="animate-spin size-8 border-4 border-primary border-t-transparent rounded-full shadow-lg"></div>
                 </div>
               ) : emails.length > 0 ? (
-                emails.map((email) => {
-                  const plainTextSnippet = (email.content || '')
-                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                    .replace(/<[^>]+>/g, '')
-                    .replace(/&nbsp;/g, ' ')
-                    .replace(/\s+/g, ' ')
-                    .trim();
+                emails
+                  .filter(email => {
+                    if (activeSubTab === 'todos') return true;
+                    if (!email.category) return activeSubTab === 'atualizacoes'; // fallback
+                    const catKey = email.category.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    return catKey === activeSubTab;
+                  })
+                  .map((email) => {
+                    const plainTextSnippet = (email.content || '')
+                      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                      .replace(/<[^>]+>/g, '')
+                      .replace(/&nbsp;/g, ' ')
+                      .replace(/\s+/g, ' ')
+                      .trim();
 
-                  return (
-                    <div key={email.id} className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start md:items-center shadow-sm hover:shadow-md transition-shadow">
-                      <div className="size-[52px] rounded-xl bg-[#F0F7FF] text-[#1E88E5] flex items-center justify-center shrink-0">
-                        <Landmark size={26} />
-                      </div>
-                      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
-                        <div className="flex items-center gap-3">
-                          <h3 className="text-[17px] md:text-[18px] font-bold text-slate-900 truncate">{email.subject || '(Sem assunto)'}</h3>
-                          {email.subject?.toLowerCase().includes('urgente') && (
-                            <span className="px-2.5 py-0.5 text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-full uppercase tracking-wider shrink-0">Urgente</span>
+                    return (
+                      <div key={email.id} className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start md:items-center shadow-sm hover:shadow-md transition-shadow">
+                        <div className="size-[52px] rounded-xl bg-[#F0F7FF] text-[#1E88E5] flex items-center justify-center shrink-0">
+                          <Landmark size={26} />
+                        </div>
+                        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
+                          <div className="flex items-center gap-3">
+                            {email.category && (
+                              <span className="px-2 py-0.5 text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-full uppercase tracking-wider shrink-0">
+                                {email.category}
+                              </span>
+                            )}
+                            <h3 className="text-[17px] md:text-[18px] font-bold text-slate-900 truncate">{email.subject || '(Sem assunto)'}</h3>
+                            {email.subject?.toLowerCase().includes('urgente') && (
+                              <span className="px-2.5 py-0.5 text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-full uppercase tracking-wider shrink-0">Urgente</span>
+                            )}
+                          </div>
+                          <p className="text-[14.5px] font-medium text-slate-700 truncate">{email.sender}</p>
+                          {plainTextSnippet && (
+                            <div className="text-[13.5px] text-slate-500 line-clamp-1 mt-0.5">
+                              {plainTextSnippet}
+                            </div>
                           )}
-                        </div>
-                        <p className="text-[14.5px] font-medium text-slate-700 truncate">{email.sender}</p>
-                        {plainTextSnippet && (
-                          <div className="text-[13.5px] text-slate-500 line-clamp-1 mt-0.5">
-                            {plainTextSnippet}
-                          </div>
-                        )}
-                        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 text-[13.5px] text-slate-500 mt-1.5">
-                          <div className="flex items-center gap-1.5 shrink-0 font-medium text-slate-400">
-                            <Clock size={14} />
-                            <span>{formatEmailDate(email.received_at)}</span>
+                          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 text-[13.5px] text-slate-500 mt-1.5">
+                            <div className="flex items-center gap-1.5 shrink-0 font-medium text-slate-400">
+                              <Clock size={14} />
+                              <span>{formatEmailDate(email.received_at)}</span>
+                            </div>
                           </div>
                         </div>
+                        <div className="w-full md:w-auto mt-4 md:mt-0 shrink-0 md:ml-4 flex items-center justify-between md:justify-end gap-3">
+                          {email.attachments && (email.attachments as any[]).length > 0 && (
+                            <span className="md:hidden px-2 py-1 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded uppercase">{(email.attachments as any[]).length} Anexo(s)</span>
+                          )}
+                          <button
+                            onClick={() => {
+                              setSelectedEmail(email);
+                              setIsEmailDetailsModalOpen(true);
+                            }}
+                            className="w-full md:w-auto px-6 py-2.5 bg-[#1E88E5] hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm text-center"
+                          >
+                            Ver Detalhes
+                          </button>
+                        </div>
                       </div>
-                      <div className="w-full md:w-auto mt-4 md:mt-0 shrink-0 md:ml-4 flex items-center justify-between md:justify-end gap-3">
-                        {email.attachments && (email.attachments as any[]).length > 0 && (
-                          <span className="md:hidden px-2 py-1 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded uppercase">{(email.attachments as any[]).length} Anexo(s)</span>
-                        )}
-                        <button
-                          onClick={() => {
-                            setSelectedEmail(email);
-                            setIsEmailDetailsModalOpen(true);
-                          }}
-                          className="w-full md:w-auto px-6 py-2.5 bg-[#1E88E5] hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm text-center"
-                        >
-                          Ver Detalhes
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
               ) : (
                 <div className="text-center py-12 text-slate-500">
                   Nenhum e-mail registrado. Clique em Atualizar Base para buscar novos e-mails.
