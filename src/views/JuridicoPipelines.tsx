@@ -19,7 +19,7 @@ import {
 import { EmailDetailsModal } from '../components/juridico/EmailDetailsModal';
 
 export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) => void }) {
-  const [activeMainTab, setActiveMainTab] = useState<'pipelines' | 'monitoramento'>('monitoramento');
+  const [activeMainTab, setActiveMainTab] = useState<'pipelines' | 'monitoramento'>('pipelines');
   const [activeSubTab, setActiveSubTab] = useState<'nomeacoes' | 'intimacoes' | 'prazos' | 'atualizacoes'>('nomeacoes');
   const [isEmailDetailsModalOpen, setIsEmailDetailsModalOpen] = useState(false);
 
@@ -107,13 +107,13 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
         <div className="flex items-center gap-6 mb-8 border-b border-slate-200">
           <button
             onClick={() => setActiveMainTab('pipelines')}
-            className={`pb-3 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors ${activeMainTab === 'pipelines' ? 'text-primary border-primary' : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'}`}
+            className={`pb-3 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors !outline-none !ring-0 ${activeMainTab === 'pipelines' ? 'text-primary border-primary' : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'}`}
           >
             Pipelines
           </button>
           <button
             onClick={() => setActiveMainTab('monitoramento')}
-            className={`pb-3 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors ${activeMainTab === 'monitoramento' ? 'text-primary border-primary' : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'}`}
+            className={`pb-3 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors !outline-none !ring-0 ${activeMainTab === 'monitoramento' ? 'text-primary border-primary' : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'}`}
           >
             Monitoramento
           </button>
@@ -318,7 +318,7 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
                   <button
                     key={tabKey}
                     onClick={() => setActiveSubTab(tabKey)}
-                    className={`pb-4 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors ${activeSubTab === tabKey ? 'text-primary border-primary' : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'}`}
+                    className={`pb-4 px-1 text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors !outline-none !ring-0 ${activeSubTab === tabKey ? 'text-primary border-primary' : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'}`}
                   >
                     {tabLabel}
                   </button>
@@ -347,7 +347,7 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
                         </div>
                         <span className="text-xs text-slate-400 font-medium shrink-0">{formatEmailDate(email.received_at)}</span>
                       </div>
-                      <div className="text-sm text-slate-600 leading-relaxed max-w-4xl line-clamp-3" dangerouslySetInnerHTML={{ __html: email.content }} />
+                      <div className="text-sm text-slate-600 leading-relaxed max-w-4xl line-clamp-3" dangerouslySetInnerHTML={{ __html: (email.content || '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<link[^>]*>/gi, '') }} />
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
                         <div className="flex items-center gap-2">
                           {email.attachments && (email.attachments as any[]).length > 0 && (

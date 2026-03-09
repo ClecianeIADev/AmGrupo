@@ -86,7 +86,7 @@ export function EmailDetailsModal({ isOpen, onClose, email }: EmailDetailsModalP
 
                     {/* Email Body */}
                     <div className="text-slate-600 text-[15px] leading-relaxed space-y-5 mb-12">
-                        <div dangerouslySetInnerHTML={{ __html: email.content || '' }} />
+                        <div dangerouslySetInnerHTML={{ __html: (email.content || '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<link[^>]*>/gi, '') }} />
                     </div>
 
                     {/* Attachments Section */}

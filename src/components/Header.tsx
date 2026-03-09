@@ -125,7 +125,7 @@ export function Header({ currentView }: { currentView: string }) {
         </div>
       )}
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 shrink-0">
         {currentView === 'juridico-processos' && (
           <div className="hidden md:flex flex-1 max-w-lg mx-6">
             <div className="relative w-full group">
@@ -193,16 +193,16 @@ export function Header({ currentView }: { currentView: string }) {
 
         <div className="h-8 w-[1px] bg-slate-200 mx-1 hidden md:block"></div>
 
-        <button className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+        <button className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus:ring-0">
           <Bell size={20} />
           <span className="absolute top-2 right-2 size-2 bg-red-500 rounded-full border-2 border-white"></span>
         </button>
 
         <div className="h-8 w-[1px] bg-slate-200 mx-1"></div>
 
-        <button className="flex items-center gap-3 pl-2 rounded-lg hover:bg-slate-50 transition-colors p-1 pr-2">
+        <button className="flex items-center gap-3 pl-2 rounded-lg hover:bg-slate-50 transition-colors p-1 pr-2 focus:outline-none focus:ring-0">
           <img src="https://i.pravatar.cc/150?u=alex" alt="Alex Moraes" className="size-9 rounded-full border border-slate-200 object-cover" />
-          <div className="hidden lg:flex flex-col items-start text-sm">
+          <div className="hidden lg:flex flex-col items-start text-sm shrink-0">
             <span className="font-semibold text-slate-900 leading-tight">Alex Moraes</span>
             <span className="text-slate-500 text-xs leading-tight">Admin</span>
           </div>

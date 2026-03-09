@@ -12,6 +12,7 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -22,19 +23,24 @@
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
 .dark ::-webkit-scrollbar-thumb {
   background: #334155;
 }
+
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
@@ -48,9 +54,11 @@
   width: 2px;
   background-color: #e2e8f0;
 }
+
 .dark .timeline-item::before {
   background-color: #334155;
 }
+
 .timeline-item:last-child::before {
   display: none;
 }
@@ -58,6 +66,22 @@
 .kanban-container::-webkit-scrollbar {
   height: 10px;
 }
+
 .kanban-column::-webkit-scrollbar {
   width: 6px;
+}
+
+/* Fix browser default focus outlines, explicitly disabling dashed outlines */
+button:focus,
+a:focus,
+button:active,
+a:active,
+button:focus-visible,
+a:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+button::-moz-focus-inner {
+  border: 0;
 }
