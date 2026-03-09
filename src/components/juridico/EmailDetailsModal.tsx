@@ -85,24 +85,15 @@ export function EmailDetailsModal({ isOpen, onClose, email }: EmailDetailsModalP
                     </div>
 
                     {/* Email Body - Extracted as Plain Text to avoid images/screenshot styling */}
-                    <div className="bg-slate-50/50 p-6 rounded-xl border border-slate-100 text-slate-700 text-[14.5px] leading-relaxed space-y-5 mb-12 whitespace-pre-wrap font-sans break-words shadow-inner">
-                        <div dangerouslySetInnerHTML={{
-                            __html: (email.content || '')
-                                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                                .replace(/<br\s*\/?>/gi, '\n')
-                                .replace(/<p[^>]*>/gi, '\n\n')
-                                .replace(/<div(?:(?!\s+class="gmail_quote").)*?>/gi, '\n')
-                                .replace(/<td[^>]*>/gi, ' ')
-                                .replace(/<tr[^>]*>/gi, '\n')
-                                .replace(/<[^>]+>/g, '') // Remove remaining tags including images
-                                .replace(/&nbsp;/g, ' ')
-                                .replace(/\n\s*\n\s*\n/g, '\n\n') // Normalize multiple newlines
-                                .replace(/&lt;/g, '<')
-                                .replace(/&gt;/g, '>')
-                                .replace(/&amp;/g, '&')
-                                .trim()
-                                .replace(/\n/g, '<br/>') // Restore standard line breaks for innerHTML rendering
-                        }} />
+                    {/* Email Body */}
+                    <div className="bg-slate-50/50 p-6 rounded-xl border border-slate-100 text-slate-700 text-[14.5px] leading-relaxed mb-12 shadow-inner overflow-hidden">
+                        <div
+                            className="prose prose-sm max-w-none prose-img:max-w-full prose-img:h-auto prose-p:my-2 prose-a:text-blue-600 hover:prose-a:underline"
+                            dangerouslySetInnerHTML={{
+                                __html: (email.content || '')
+                                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Strip styles that bleed
+                                    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Strip scripts for safety
+                            }} />
                     </div>
 
                     {/* Attachments Section */}
