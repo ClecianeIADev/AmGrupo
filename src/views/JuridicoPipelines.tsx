@@ -355,17 +355,16 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
                           )}
                         </div>
                         <p className="text-[14.5px] font-medium text-slate-700 truncate">{email.sender}</p>
+                        {plainTextSnippet && (
+                          <div className="text-[13.5px] text-slate-500 line-clamp-1 mt-0.5">
+                            {plainTextSnippet}
+                          </div>
+                        )}
                         <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 text-[13.5px] text-slate-500 mt-1.5">
-                          <div className="flex items-center gap-1.5 shrink-0 font-medium">
-                            <Clock size={14} className="text-slate-400" />
+                          <div className="flex items-center gap-1.5 shrink-0 font-medium text-slate-400">
+                            <Clock size={14} />
                             <span>{formatEmailDate(email.received_at)}</span>
                           </div>
-                          {plainTextSnippet && (
-                            <>
-                              <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></div>
-                              <span className="truncate hidden md:block">{plainTextSnippet}</span>
-                            </>
-                          )}
                         </div>
                       </div>
                       <div className="w-full md:w-auto mt-4 md:mt-0 shrink-0 md:ml-4 flex items-center justify-between md:justify-end gap-3">
