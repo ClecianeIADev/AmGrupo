@@ -334,39 +334,57 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
                   <div className="animate-spin size-8 border-4 border-primary border-t-transparent rounded-full shadow-lg"></div>
                 </div>
               ) : emails.length > 0 ? (
-                emails.map((email) => (
-                  <div key={email.id} className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start shadow-sm hover:shadow-md transition-shadow">
-                    <div className="size-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">
-                      <Mail size={24} className="fill-slate-400" />
-                    </div>
-                    <div className="flex-1 min-w-0 flex flex-col gap-3">
-                      <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
-                        <div>
-                          <h3 className="text-base font-bold text-slate-900">{email.sender}</h3>
-                          <p className="text-sm font-medium text-blue-500">{email.subject}</p>
-                        </div>
-                        <span className="text-xs text-slate-400 font-medium shrink-0">{formatEmailDate(email.received_at)}</span>
+                emails.map((email) => {
+                  const plainTextSnippet = (email.content || '')
+                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                    .replace(/<[^>]+>/g, '')
+                    .replace(/&nbsp;/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                  return (
+                    <div key={email.id} className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col md:flex-row gap-6 items-start md:items-center shadow-sm hover:shadow-md transition-shadow">
+                      <div className="size-[52px] rounded-xl bg-[#F0F7FF] text-[#1E88E5] flex items-center justify-center shrink-0">
+                        <Landmark size={26} />
                       </div>
-                      <div className="text-sm text-slate-600 leading-relaxed max-w-4xl line-clamp-3" dangerouslySetInnerHTML={{ __html: (email.content || '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<link[^>]*>/gi, '') }} />
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
-                        <div className="flex items-center gap-2">
-                          {email.attachments && (email.attachments as any[]).length > 0 && (
-                            <span className="px-2 py-1 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded uppercase">{(email.attachments as any[]).length} Anexo(s)</span>
+                      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-[17px] md:text-[18px] font-bold text-slate-900 truncate">{email.subject || '(Sem assunto)'}</h3>
+                          {email.subject?.toLowerCase().includes('urgente') && (
+                            <span className="px-2.5 py-0.5 text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-full uppercase tracking-wider shrink-0">Urgente</span>
                           )}
                         </div>
+                        <p className="text-[14.5px] font-medium text-slate-700 truncate">{email.sender}</p>
+                        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 text-[13.5px] text-slate-500 mt-1.5">
+                          <div className="flex items-center gap-1.5 shrink-0 font-medium">
+                            <Clock size={14} className="text-slate-400" />
+                            <span>{formatEmailDate(email.received_at)}</span>
+                          </div>
+                          {plainTextSnippet && (
+                            <>
+                              <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></div>
+                              <span className="truncate hidden md:block">{plainTextSnippet}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="w-full md:w-auto mt-4 md:mt-0 shrink-0 md:ml-4 flex items-center justify-between md:justify-end gap-3">
+                        {email.attachments && (email.attachments as any[]).length > 0 && (
+                          <span className="md:hidden px-2 py-1 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded uppercase">{(email.attachments as any[]).length} Anexo(s)</span>
+                        )}
                         <button
                           onClick={() => {
                             setSelectedEmail(email);
                             setIsEmailDetailsModalOpen(true);
                           }}
-                          className={`${email.attachments && (email.attachments as any[]).length > 0 ? "px-6 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-primary" : "px-6 py-2 bg-primary hover:bg-blue-600 text-white"} text-sm font-medium rounded-lg transition-colors shadow-sm`}
+                          className="w-full md:w-auto px-6 py-2.5 bg-[#1E88E5] hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm text-center"
                         >
-                          Ver detalhes
+                          Ver Detalhes
                         </button>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-center py-12 text-slate-500">
                   Nenhum e-mail registrado. Clique em Atualizar Base para buscar novos e-mails.
