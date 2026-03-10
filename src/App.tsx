@@ -33,6 +33,9 @@ export default function App() {
         if (error) {
           console.error('Erro ao recuperar sessão:', error);
         }
+        if (data?.session?.provider_token) {
+          localStorage.setItem('google_provider_token', data.session.provider_token);
+        }
         setSession(data?.session || null);
         setIsInitializing(false);
       })
@@ -44,6 +47,11 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.provider_token) {
+        localStorage.setItem('google_provider_token', session.provider_token);
+      } else if (!session) {
+        localStorage.removeItem('google_provider_token');
+      }
       setSession(session);
     });
 

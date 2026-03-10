@@ -11,17 +11,19 @@ import {
   ArrowRight,
   Plus,
   ChevronRight,
-  RefreshCw,
   Mail,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { EmailDetailsModal } from '../components/juridico/EmailDetailsModal';
+import { EmailReplyModal } from '../components/juridico/EmailReplyModal';
 
 export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) => void }) {
   const [activeMainTab, setActiveMainTab] = useState<'pipelines' | 'monitoramento'>('pipelines');
   const [activeSubTab, setActiveSubTab] = useState<'todos' | 'nomeacoes' | 'intimacoes' | 'prazos' | 'atualizacoes'>('todos');
   const [isEmailDetailsModalOpen, setIsEmailDetailsModalOpen] = useState(false);
+  const [isEmailReplyModalOpen, setIsEmailReplyModalOpen] = useState(false);
 
   const [emails, setEmails] = useState<any[]>([]);
   const [loadingEmails, setLoadingEmails] = useState(false);
@@ -37,21 +39,31 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
     setLoadingEmails(true);
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const providerToken = localStorage.getItem('google_provider_token');
 
-      if (sessionError || !session || !session.provider_token) {
+      if (sessionError || !session || !providerToken) {
         alert('Para buscar novos e-mails, você precisa estar logado com sua conta do Google.\n\nPor favor, vá em "Sair" no menu esquerdo e faça o login usando o botão "Continuar com o Google" na tela inicial.');
         await fetchEmails();
         return;
       }
 
       const { data, error } = await supabase.functions.invoke('fetch_gmail_inbox', {
-        body: { providerToken: session.provider_token }
+        body: { providerToken }
       });
 
       if (error) {
         console.error('Edge Function Error:', error);
         alert(`Erro ao sincronizar com o Gmail: ${error.message || 'Falha na requisição'}`);
       } else if (data && data.error) {
+        if (
+          data.error.includes('401') ||
+          data.error.includes('UNAUTHENTICATED') ||
+          data.error.includes('Invalid Credentials')
+        ) {
+          alert('Sua sessão do Google expirou por segurança (mais de 1 hora inativa). Por favor, realize o login novamente.');
+          await supabase.auth.signOut();
+          return;
+        }
         alert(`Erro do Google: ${data.error}`);
       }
 
@@ -420,6 +432,20 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
           setSelectedEmail(null);
         }}
         email={selectedEmail}
+        onReplyClick={(emailToReply) => {
+          setSelectedEmail(emailToReply);
+          setIsEmailDetailsModalOpen(false); // Close details
+          setIsEmailReplyModalOpen(true);    // Open reply
+        }}
+      />
+
+      <EmailReplyModal
+        isOpen={isEmailReplyModalOpen}
+        onClose={() => {
+          setIsEmailReplyModalOpen(false);
+          setSelectedEmail(null);
+        }}
+        originalEmail={selectedEmail}
       />
     </main>
   );

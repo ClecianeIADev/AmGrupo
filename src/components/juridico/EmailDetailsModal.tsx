@@ -5,9 +5,10 @@ interface EmailDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
     email?: any;
+    onReplyClick?: (email: any) => void;
 }
 
-export function EmailDetailsModal({ isOpen, onClose, email }: EmailDetailsModalProps) {
+export function EmailDetailsModal({ isOpen, onClose, email, onReplyClick }: EmailDetailsModalProps) {
     if (!isOpen || !email) return null;
 
     const formattedDate = new Date(email.received_at).toLocaleDateString('pt-BR', {
@@ -133,7 +134,12 @@ export function EmailDetailsModal({ isOpen, onClose, email }: EmailDetailsModalP
                             <Link size={18} />
                             Vincular ao Processo
                         </button>
-                        <button className="flex-1 flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-6 py-3 rounded-lg font-bold text-sm shadow-sm transition-all active:scale-95">
+                        <button
+                            onClick={() => {
+                                if (onReplyClick) onReplyClick(email);
+                            }}
+                            className="flex-1 flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-6 py-3 rounded-lg font-bold text-sm shadow-sm transition-all active:scale-95"
+                        >
                             <CornerUpLeft size={18} />
                             Responder
                         </button>
