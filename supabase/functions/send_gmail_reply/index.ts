@@ -25,7 +25,7 @@ function encodeBase64Url(str: string): string {
     return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
     const corsHeaders = getCorsHeaders(req);
 
     if (req.method === 'OPTIONS') {
@@ -50,9 +50,19 @@ serve(async (req) => {
             throw new Error('Sessão inválida ou expirada.');
         }
 
-        // Retrieve the Google provider_token server-side from auth.sessions.
-        // The token is never stored or transmitted by the frontend.
-        const { data: providerToken, error: tokenError } = await supabaseClient.rpc('get_user_provider_token');
+        const adminClient = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        );
+
+        // Fetch provider_token via adminClient using the verified user.id
+        const { data: tokenRow, error: tokenError } = await adminClient
+            .from('user_provider_tokens')
+            .select('provider_token')
+            .eq('user_id', user.id)
+            .single();
+
+        const providerToken = tokenRow?.provider_token ?? null;
         if (tokenError || !providerToken) {
             throw new Error('Token do Google não encontrado. Faça login novamente.');
         }
@@ -136,10 +146,11 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
 
-    } catch (err: any) {
-        console.error('send_gmail_reply error:', err.message);
-        const isClientError = err.message.includes('obrigatórios') || err.message.includes('inválida') || err.message.includes('autorização') || err.message.includes('Token');
-        return new Response(JSON.stringify({ error: err.message }), {
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('send_gmail_reply error:', message);
+        const isClientError = message.includes('obrigatórios') || message.includes('inválida') || message.includes('autorização') || message.includes('Token');
+        return new Response(JSON.stringify({ error: message }), {
             status: isClientError ? 400 : 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

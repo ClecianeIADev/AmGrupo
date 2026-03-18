@@ -28,12 +28,40 @@ export default function App() {
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string | null>(null);
 
   useEffect(() => {
+    const saveProviderToken = async (userId: string, providerToken: string, providerRefreshToken: string | null) => {
+      console.log('[Auth] Salvando provider_token para user:', userId);
+      const { error } = await supabase
+        .from('user_provider_tokens')
+        .upsert(
+          {
+            user_id: userId,
+            provider: 'google',
+            provider_token: providerToken,
+            provider_refresh_token: providerRefreshToken ?? null,
+          },
+          { onConflict: 'user_id' }
+        );
+      if (error) {
+        console.error('[Auth] ERRO ao salvar provider_token:', error.code, error.message, error.details);
+      } else {
+        console.log('[Auth] provider_token salvo com sucesso.');
+      }
+    };
+
     supabase.auth.getSession()
       .then(({ data, error }) => {
         if (error) {
           console.error('Erro ao recuperar sessão:', error);
         }
-        setSession(data?.session || null);
+        const s = data?.session || null;
+        setSession(s);
+        // Capture token available right after OAuth redirect (same page load)
+        if (s?.provider_token) {
+          console.log('[Auth] getSession: provider_token encontrado, salvando...');
+          saveProviderToken(s.user.id, s.provider_token, s.provider_refresh_token ?? null);
+        } else {
+          console.log('[Auth] getSession: sem provider_token (normal em sessões restauradas do storage).');
+        }
         setIsInitializing(false);
       })
       .catch((err) => {
@@ -43,8 +71,16 @@ export default function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[Auth] onAuthStateChange:', event, '| provider_token:', session?.provider_token ? 'PRESENTE' : 'AUSENTE');
       setSession(session);
+
+      if (
+        session?.provider_token &&
+        (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')
+      ) {
+        saveProviderToken(session.user.id, session.provider_token, session.provider_refresh_token ?? null);
+      }
     });
 
     return () => subscription.unsubscribe();

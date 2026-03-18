@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '').split(',').map(o => o.trim()).filter(Boolean);
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '').split(',').map((o: string) => o.trim()).filter(Boolean);
 
 function getCorsHeaders(req: Request): Record<string, string> {
     const origin = req.headers.get('Origin') ?? '';
@@ -72,11 +72,27 @@ function classifyEmail(subject: string, contentBody: string): string {
         return 'Nomeações';
     }
 
-    // Default fallback
+// Default fallback
     return 'Atualizações';
 }
 
-serve(async (req) => {
+interface GmailPart {
+    mimeType: string;
+    body?: {
+        data?: string;
+        size?: number;
+        attachmentId?: string;
+    };
+    parts?: GmailPart[];
+    filename?: string;
+}
+
+interface GmailHeader {
+    name: string;
+    value: string;
+}
+
+serve(async (req: Request) => {
     const corsHeaders = getCorsHeaders(req);
 
     if (req.method === 'OPTIONS') {
@@ -115,8 +131,19 @@ serve(async (req) => {
 
         // Retrieve the Google provider_token server-side from auth.sessions.
         // The token is never stored or transmitted by the frontend.
-        const { data: providerToken, error: tokenError } = await supabaseClient.rpc('get_user_provider_token');
+        // Fetch provider_token via adminClient using the verified user.id
+        // (avoids auth.uid() resolution issues in SECURITY DEFINER context)
+        const { data: tokenRow, error: tokenError } = await adminClient
+            .from('user_provider_tokens')
+            .select('provider_token')
+            .eq('user_id', user.id)
+            .single();
+
+        const providerToken = tokenRow?.provider_token ?? null;
+        
         if (tokenError || !providerToken) {
+            const detail = tokenError ? `${tokenError.code}: ${tokenError.message}` : 'sem token salvo para este usuário';
+            console.error('[fetch_gmail_inbox] provider_token não encontrado:', detail);
             return new Response(JSON.stringify({ error: 'Permissão do Google não encontrada, faça relogin com a aba de Continuar com Google.' }), {
                 status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -135,8 +162,11 @@ serve(async (req) => {
 
         let queryOptions = ['in:inbox'];
         if (latestEmails && latestEmails.length > 0 && latestEmails[0].received_at) {
-            const timestamp = Math.floor(new Date(latestEmails[0].received_at).getTime() / 1000);
-            queryOptions.push(`after:${timestamp}`);
+            const lastDate = new Date(latestEmails[0].received_at);
+            if (!isNaN(lastDate.getTime())) {
+                const timestamp = Math.floor(lastDate.getTime() / 1000);
+                queryOptions.push(`after:${timestamp}`);
+            }
         }
 
         const query = `q=${encodeURIComponent(queryOptions.join(' '))}`;
@@ -179,7 +209,7 @@ serve(async (req) => {
                 let content = '';
                 const parts = emailData.payload?.parts || [emailData.payload];
 
-                const getBody = (partsList: any[]) => {
+                const getBody = (partsList: GmailPart[]): { html: string; text: string } => {
                     let htmlBody = '';
                     let textBody = '';
                     for (const p of partsList) {
@@ -200,8 +230,13 @@ serve(async (req) => {
                 const bodyData = getBody(parts);
                 content = bodyData.html || bodyData.text || '';
 
-                const attachments = [];
-                const extractAttachments = (partsList: any[]) => {
+                interface AttachmentInfo {
+                    name: string;
+                    size: string;
+                    attachmentId: string;
+                }
+                const attachments: AttachmentInfo[] = [];
+                const extractAttachments = (partsList: GmailPart[]) => {
                     for (const p of partsList) {
                         if (!p) continue;
                         if (p.filename && p.filename.length > 0 && p.body?.attachmentId) {
@@ -259,8 +294,9 @@ serve(async (req) => {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
-    } catch (err: any) {
-        console.error('fetch_gmail_inbox error:', err.message);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('fetch_gmail_inbox error:', message);
         return new Response(JSON.stringify({ error: 'Erro interno no servidor.' }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
