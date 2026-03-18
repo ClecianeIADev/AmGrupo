@@ -1,10 +1,17 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '').split(',').map((o: string) => o.trim()).filter(Boolean);
+
+function getCorsHeaders(req: Request): Record<string, string> {
+    const origin = req.headers.get('Origin') ?? '';
+    const allowedOrigin = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+    return {
+        'Access-Control-Allow-Origin': allowedOrigin || '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Vary': 'Origin',
+    };
+}
 
 // Helper function to encode string to Base64Url (RFC 4648)
 function encodeBase64Url(str: string): string {
@@ -19,6 +26,8 @@ function encodeBase64Url(str: string): string {
 }
 
 serve(async (req) => {
+    const corsHeaders = getCorsHeaders(req);
+
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
     }
@@ -41,11 +50,14 @@ serve(async (req) => {
             throw new Error('Sessão inválida ou expirada.');
         }
 
-        const { providerToken, to, cc, cco, subject, body, inReplyTo, references } = await req.json();
-
-        if (!providerToken) {
+        // Retrieve the Google provider_token server-side from auth.sessions.
+        // The token is never stored or transmitted by the frontend.
+        const { data: providerToken, error: tokenError } = await supabaseClient.rpc('get_user_provider_token');
+        if (tokenError || !providerToken) {
             throw new Error('Token do Google não encontrado. Faça login novamente.');
         }
+
+        const { to, cc, cco, subject, body, inReplyTo, references } = await req.json();
 
         if (!to || !subject || !body) {
             throw new Error('Campos obrigatórios ausentes: destinatário, assunto ou corpo do email.');
@@ -125,9 +137,10 @@ serve(async (req) => {
         });
 
     } catch (err: any) {
-        console.error("Function error:", err.message);
+        console.error('send_gmail_reply error:', err.message);
+        const isClientError = err.message.includes('obrigatórios') || err.message.includes('inválida') || err.message.includes('autorização') || err.message.includes('Token');
         return new Response(JSON.stringify({ error: err.message }), {
-            status: 200,
+            status: isClientError ? 400 : 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     }

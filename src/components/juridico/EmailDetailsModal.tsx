@@ -1,5 +1,6 @@
 import { X, Mail, AlertTriangle, Paperclip, Download, Link, CornerUpLeft, Archive } from 'lucide-react';
 import React from 'react';
+import DOMPurify from 'dompurify';
 
 interface EmailDetailsModalProps {
     isOpen: boolean;
@@ -91,9 +92,11 @@ export function EmailDetailsModal({ isOpen, onClose, email, onReplyClick }: Emai
                         <div
                             className="prose prose-sm max-w-none prose-img:max-w-full prose-img:h-auto prose-p:my-2 prose-a:text-blue-600 hover:prose-a:underline"
                             dangerouslySetInnerHTML={{
-                                __html: (email.content || '')
-                                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Strip styles that bleed
-                                    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Strip scripts for safety
+                                __html: DOMPurify.sanitize(email.content || '', {
+                                    USE_PROFILES: { html: true },
+                                    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'onsubmit'],
+                                    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+                                })
                             }} />
                     </div>
 

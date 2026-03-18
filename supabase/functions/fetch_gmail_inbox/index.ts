@@ -1,10 +1,17 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '').split(',').map(o => o.trim()).filter(Boolean);
+
+function getCorsHeaders(req: Request): Record<string, string> {
+    const origin = req.headers.get('Origin') ?? '';
+    const allowedOrigin = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+    return {
+        'Access-Control-Allow-Origin': allowedOrigin || '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Vary': 'Origin',
+    };
+}
 
 // Helper function to properly decode base64url encoded UTF-8 strings
 function decodeBase64Utf8(base64UrlStr: string): string {
@@ -70,6 +77,8 @@ function classifyEmail(subject: string, contentBody: string): string {
 }
 
 serve(async (req) => {
+    const corsHeaders = getCorsHeaders(req);
+
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
     }
@@ -78,7 +87,7 @@ serve(async (req) => {
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) {
             return new Response(JSON.stringify({ error: 'Nenhuma credencial de autorização enviada.' }), {
-                status: 200,
+                status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
@@ -93,8 +102,8 @@ serve(async (req) => {
         const { data: { user }, error: userError } = await supabaseClient.auth.getUser(jwt);
 
         if (userError || !user) {
-            return new Response(JSON.stringify({ error: 'Sessão inválida ou expirada. Pressione Sair e faça login novamente com o Google.', details: userError }), {
-                status: 200,
+            return new Response(JSON.stringify({ error: 'Sessão inválida ou expirada. Pressione Sair e faça login novamente com o Google.' }), {
+                status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
@@ -104,13 +113,18 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
-        const { providerToken } = await req.json();
-        if (!providerToken) {
+        // Retrieve the Google provider_token server-side from auth.sessions.
+        // The token is never stored or transmitted by the frontend.
+        const { data: providerToken, error: tokenError } = await supabaseClient.rpc('get_user_provider_token');
+        if (tokenError || !providerToken) {
             return new Response(JSON.stringify({ error: 'Permissão do Google não encontrada, faça relogin com a aba de Continuar com Google.' }), {
-                status: 200,
+                status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
+
+        // Body no longer needed; consume to avoid resource leaks on POST requests
+        await req.json().catch(() => {});
 
         const { data: latestEmails } = await adminClient
             .from('user_emails')
@@ -132,9 +146,9 @@ serve(async (req) => {
         });
 
         if (!listRes.ok) {
-            const gErr = await listRes.text();
-            return new Response(JSON.stringify({ error: 'Falha ao buscar e-mails do Gmail. Talvez a API do Gmail não esteja ativada no Cloud.', details: gErr }), {
-                status: 200,
+            console.error('Gmail list error:', listRes.status, await listRes.text());
+            return new Response(JSON.stringify({ error: 'Falha ao buscar e-mails do Gmail. Verifique se a API do Gmail está ativada no Cloud.' }), {
+                status: 502,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
@@ -230,8 +244,8 @@ serve(async (req) => {
                 .upsert(newEmails, { onConflict: 'user_id,google_message_id' });
 
             if (upsertError) {
-                return new Response(JSON.stringify({ error: 'Erro ao gravar no banco de dados.', details: upsertError }), {
-                    status: 200,
+                return new Response(JSON.stringify({ error: 'Erro ao gravar no banco de dados.' }), {
+                    status: 500,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             }
@@ -246,8 +260,9 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
     } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message, stack: err.stack }), {
-            status: 200,
+        console.error('fetch_gmail_inbox error:', err.message);
+        return new Response(JSON.stringify({ error: 'Erro interno no servidor.' }), {
+            status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
     }

@@ -17,8 +17,14 @@ Funções devem fazer apenas uma coisa. Nomes de variáveis, funções e compone
 ### V. Segurança de Dados e Código
 Segredos (API keys, tokens, URLs de banco) nunca no código-fonte — usar `.env`. Nunca renderizar HTML vindo do usuário diretamente (prevenção XSS). Sempre validar entrada de usuário. Sempre usar queries parametrizadas via Supabase client (prevenção SQL Injection). Edge Functions que chamam APIs externas (Gmail, etc.) são o único ponto de saída autorizado.Nunca expor chaves, tokens ou segredos no frontend
 
+### VII. Sessão Obrigatória via Google — Expiração ao Fechar o Navegador (NON-NEGOTIABLE)
+Nenhum usuário pode acessar qualquer rota do sistema sem estar autenticado via Google OAuth. Qualquer acesso sem sessão válida redireciona imediatamente para a tela de login. A sessão é armazenada exclusivamente em `sessionStorage` (nunca em `localStorage`), garantindo que ao fechar o navegador ou aba a sessão seja automaticamente encerrada — sem "lembrar" o login entre sessões distintas. O token do Google (`google_provider_token`) segue a mesma regra: gravado em `sessionStorage` e removido ao deslogar ou ao encerrar o navegador. O cliente Supabase deve ser instanciado com `storage: window.sessionStorage` e `persistSession: true`.
+
 ### VI. Design Consistente e Premium
 Todo novo componente deve seguir o design system do projeto: paleta de cores via variáveis CSS em `index.css`, fontes via Google Fonts (Inter/Outfit), e padrões de cards/tabelas já estabelecidos. É proibido usar cores hardcoded (`#fff`, `red`) — usar variáveis (`var(--color-primary)`). Micro-animações são encorajadas via Motion. Componentes devem ser reutilizáveis e consistentes entre módulos.
+
+### VIII. Tradução Automática baseada no Sistema (NON-NEGOTIABLE)
+O sistema deve identificar automaticamente o idioma/localidade do computador do usuário e adaptar a interface e comunicações de acordo. A experiência inicial do usuário deve ser sempre no seu idioma nativo detectado, sem necessidade de configuração manual prévia.
 
 ---
 
@@ -30,6 +36,7 @@ Todo novo componente deve seguir o design system do projeto: paleta de cores via
 - **Banco de dados**: Alterações de schema somente via `apply_migration`. Nunca editar tabelas diretamente pelo painel do Supabase.
 - **Autenticação**: Exclusivamente Google OAuth 2.0 via Supabase Auth. Nenhum outro provider sem aprovação.
 - **Testes**: Usar Vitest para unitários e de componentes. Toda função utilitária crítica deve ter cobertura de teste. Testes de API validam contratos das Edge Functions.
+- **Internacionalização (i18n)**: Implementar detecção de locale via `navigator.language` ou APIs equivalentes do sistema para garantir a tradução automática conforme a identificação do computador do usuário.
 
 ---
 
@@ -47,4 +54,4 @@ Todo novo componente deve seguir o design system do projeto: paleta de cores via
 
 Esta constituição tem precedência sobre qualquer outro padrão ou convenção do projeto. Alterações exigem documentação do motivo e revisão de impacto. Toda ambiguidade de implementação deve ser resolvida consultando este documento primeiro. Nenhum PR que viole os princípios I, II ou III deve ser aprovado.
 
-**Version**: 1.0.0 | **Ratificada**: 2026-03-16 | **Última Alteração**: 2026-03-16
+**Version**: 1.2.0 | **Ratificada**: 2026-03-16 | **Última Alteração**: 2026-03-17 (Adição de regra de tradução automática)

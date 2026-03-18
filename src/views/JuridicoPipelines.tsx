@@ -39,16 +39,16 @@ export function JuridicoPipelines({ onNavigate }: { onNavigate: (view: string) =
     setLoadingEmails(true);
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      const providerToken = localStorage.getItem('google_provider_token');
 
-      if (sessionError || !session || !providerToken) {
+      if (sessionError || !session) {
         alert('Para buscar novos e-mails, você precisa estar logado com sua conta do Google.\n\nPor favor, vá em "Sair" no menu esquerdo e faça o login usando o botão "Continuar com o Google" na tela inicial.');
         await fetchEmails();
         return;
       }
 
+      // provider_token is fetched server-side by the Edge Function via get_user_provider_token()
       const { data, error } = await supabase.functions.invoke('fetch_gmail_inbox', {
-        body: { providerToken }
+        body: {}
       });
 
       if (error) {

@@ -1,6 +1,7 @@
 import { X, Mail, Send, Paperclip } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import DOMPurify from 'dompurify';
 
 interface EmailReplyModalProps {
     isOpen: boolean;
@@ -52,21 +53,9 @@ export function EmailReplyModal({ isOpen, onClose, originalEmail }: EmailReplyMo
 
         setIsSending(true);
         try {
-            const providerToken = localStorage.getItem('google_provider_token');
-
-            if (!providerToken) {
-                setErrorMsg('Acesso ao Google expirado. Forçando re-autenticação...');
-                setIsSending(false);
-                setTimeout(async () => {
-                    await supabase.auth.signOut();
-                }, 2000);
-                return;
-            }
-
-            // The edge function invocation
+            // provider_token is fetched server-side by the Edge Function via get_user_provider_token()
             const { data, error } = await supabase.functions.invoke('send_gmail_reply', {
                 body: {
-                    providerToken,
                     to,
                     cc,
                     cco,
@@ -233,9 +222,11 @@ export function EmailReplyModal({ isOpen, onClose, originalEmail }: EmailReplyMo
                                 </summary>
                                 <div className="mt-3 text-[13px] leading-relaxed opacity-80 max-h-[150px] overflow-y-auto bg-slate-50 p-3 rounded border border-slate-100 cursor-text">
                                     <div dangerouslySetInnerHTML={{
-                                        __html: (originalEmail.content || '')
-                                            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                                            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                                        __html: DOMPurify.sanitize(originalEmail.content || '', {
+                                            USE_PROFILES: { html: true },
+                                            FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'onsubmit'],
+                                            FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+                                        })
                                     }} />
                                 </div>
                             </details>
