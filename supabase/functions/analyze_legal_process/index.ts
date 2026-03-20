@@ -47,6 +47,18 @@ const EXAM_MODULE_NAMES = [
     'Exame Respiratório (Triagem Pericial)',
 ];
 
+const KANBAN_STAGES = [
+    'Pendentes',
+    'Aceites',
+    'Perícia Agendada',
+    'Periciado Não Compareceu',
+    'Revisando Laudo/Impugnação',
+    'Aguardando Manifestações',
+    'Aguardando Pagamento',
+    'Finalizado',
+    'Não Realizado',
+] as const;
+
 const EXTRACTION_PROMPT = `You are a Brazilian legal document analysis expert. Extract structured information from this legal document and return ONLY valid JSON matching this exact schema. Do not include any text outside the JSON object.
 
 {
@@ -57,11 +69,12 @@ const EXTRACTION_PROMPT = `You are a Brazilian legal document analysis expert. E
   "process_summary": "detailed process summary in Portuguese covering timeline and key facts (string)",
   "events_timeline": [{"date": "YYYY-MM-DD or partial date string", "event": "string", "outcome": "string or null"}],
   "quesitos": [{"party": "string", "text": "full text of the quesito (string)", "source_page": "page number or null"}],
-  "relevant_documents": [{"name": "string", "type": "string", "category": "string", "date": "date string or null", "parties": ["string"], "summary": "string"}],
+  "relevant_documents": [{"name": "string", "type": "string", "category": "string", "date": "date string or null", "parties": ["string"], "summary": "string", "download_url": "direct download URL or sharing link found in the document for this specific file, null if not found"}],
   "suggested_examinations": [{"name": "string", "justification": "string", "priority": "high|medium|low"}],
   "critical_dates": [{"date": "YYYY-MM-DD or partial date string", "description": "string", "type": "deadline|hearing|filing|other"}],
   "extraction_confidence": 0.85,
-  "extraction_errors": ["list any fields that could not be reliably extracted"]
+  "extraction_errors": ["list any fields that could not be reliably extracted"],
+  "kanban_stage": "one of the exact stage names listed in instruction 4"
 }
 
 IMPORTANT INSTRUCTIONS:
@@ -85,7 +98,19 @@ IMPORTANT INSTRUCTIONS:
 ${EXAM_MODULE_NAMES.map(n => `   - "${n}"`).join('\n')}
    Choose the modules most relevant to the specific medical claims and injuries described in the process. Provide a specific justification based on the case facts for each module. If the process type genuinely does not involve any health/physical assessment, return an empty array.
 
-3. All text fields must be in Brazilian Portuguese. Dates should use ISO 8601 format when possible.`;
+3. All text fields must be in Brazilian Portuguese. Dates should use ISO 8601 format when possible.
+
+4. KANBAN STAGE: Scan the document in reverse chronological order to identify the most recent case status indicator, then assign exactly one of the following stage names to "kanban_stage":
+   - "Pendentes" — No clear progression indicator found; default when uncertain.
+   - "Aceites" — Document contains explicit acceptance or confirmation of expert proceedings by the parties.
+   - "Perícia Agendada" — Document specifies a scheduled expert examination date with confirmed party attendance.
+   - "Periciado Não Compareceu" — Document records an absence or no-show at a scheduled expert examination.
+   - "Revisando Laudo/Impugnação" — Document shows expert report (laudo) submission or an objection/impugnação filing by any party.
+   - "Aguardando Manifestações" — Document indicates the process is awaiting party submissions or a judicial request for manifestations.
+   - "Aguardando Pagamento" — Document references unpaid expert fees, honorários periciais, or pending cost allocation (depósito, alvará).
+   - "Finalizado" — Document contains a final judgment (sentença), court decision, settlement agreement, or official case closure.
+   - "Não Realizado" — Document records cancellation of expert proceedings, expert refusal, or termination without completion.
+   When multiple criteria apply, always use the most recent temporal indicator. Return the exact string as shown above.`;
 
 serve(async (req: Request) => {
     // Handle CORS preflight
@@ -181,34 +206,57 @@ serve(async (req: Request) => {
     }
 
     // ── T020: OpenAI extraction (via raw fetch — no SDK dependency) ───────────
-    // Upload document to OpenAI Files API
-    let fileId = '';
-    try {
-        console.log(`[Debug] Uploading document to OpenAI Files API...`);
-        const formData = new FormData();
-        const fileBlob = new Blob([documentBytes.buffer as ArrayBuffer], { type: process.document_mime_type });
-        formData.append('file', fileBlob, process.document_name);
-        formData.append('purpose', 'user_data');
+    // Strategy depends on MIME type:
+    //   PDF  → OpenAI Files API + type:'file' reference in chat
+    //   Image → base64 data URL + type:'image_url' in chat
+    const mime = process.document_mime_type as string;
+    const isPdf = mime === 'application/pdf';
+    const isImage = ['image/jpeg', 'image/png', 'image/webp'].includes(mime);
 
-        const uploadRes = await fetch('https://api.openai.com/v1/files', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${openaiApiKey}` },
-            body: formData,
-        });
-        if (!uploadRes.ok) {
-            const err = await uploadRes.json().catch(() => ({}));
-            throw new Error(err?.error?.message ?? `HTTP ${uploadRes.status}`);
-        }
-        const uploadData = await uploadRes.json();
-        fileId = uploadData.id;
-        console.log(`[Debug] File uploaded. ID: ${fileId}`);
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        return await failProcess(`Failed to upload document to OpenAI: ${message}`, 500);
+    if (!isPdf && !isImage) {
+        return await failProcess(
+            `Formato não suportado para extração por IA: ${mime}. Envie um arquivo PDF ou imagem (JPG, PNG, WEBP).`,
+            400
+        );
     }
 
+    let fileId = '';
     let extracted: Record<string, unknown>;
+
     try {
+        // Build the document content part for the chat message
+        let documentContentPart: Record<string, unknown>;
+
+        if (isPdf) {
+            // Upload PDF to OpenAI Files API, then reference by file_id
+            console.log(`[Debug] Uploading PDF to OpenAI Files API...`);
+            const formData = new FormData();
+            const fileBlob = new Blob([documentBytes.buffer as ArrayBuffer], { type: mime });
+            formData.append('file', fileBlob, process.document_name);
+            formData.append('purpose', 'user_data');
+
+            const uploadRes = await fetch('https://api.openai.com/v1/files', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${openaiApiKey}` },
+                body: formData,
+            });
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json().catch(() => ({}));
+                throw new Error(err?.error?.message ?? `HTTP ${uploadRes.status}`);
+            }
+            const uploadData = await uploadRes.json();
+            fileId = uploadData.id;
+            console.log(`[Debug] PDF uploaded. file_id: ${fileId}`);
+
+            documentContentPart = { type: 'file', file: { file_id: fileId } };
+        } else {
+            // Encode image as base64 data URL — no Files API needed
+            console.log(`[Debug] Encoding image as base64 (${documentBytes.length} bytes)...`);
+            const base64 = btoa(String.fromCharCode(...documentBytes));
+            const dataUrl = `data:${mime};base64,${base64}`;
+            documentContentPart = { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } };
+        }
+
         console.log(`[Debug] Sending to OpenAI Chat Completions (gpt-4o-mini)...`);
         const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -221,7 +269,7 @@ serve(async (req: Request) => {
                 messages: [{
                     role: 'user',
                     content: [
-                        { type: 'file', file: { file_id: fileId } },
+                        documentContentPart,
                         { type: 'text', text: EXTRACTION_PROMPT },
                     ],
                 }],
@@ -241,12 +289,61 @@ serve(async (req: Request) => {
         const message = err instanceof Error ? err.message : String(err);
         return await failProcess(`OpenAI extraction failed: ${message}`, 502);
     } finally {
-        // Always clean up the uploaded file
+        // Clean up uploaded PDF file (no-op for images)
         if (fileId) {
             await fetch(`https://api.openai.com/v1/files/${fileId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${openaiApiKey}` },
             }).catch(() => {});
+        }
+    }
+
+    // ── Auto-download linked documents ────────────────────────────────────────
+    const autoDocuments: Array<{
+        id: string; name: string; storage_path: string;
+        mime_type: string | null; source_url: string | null;
+        file_size: number | null; created_at: string; source: string;
+    }> = [];
+
+    const relevantDocsForDownload = Array.isArray(extracted.relevant_documents)
+        ? (extracted.relevant_documents as Array<{ name?: string; download_url?: string }>)
+        : [];
+
+    for (const doc of relevantDocsForDownload) {
+        if (!doc.download_url) continue;
+        try {
+            let fetchUrl = doc.download_url;
+            // Convert Google Drive view URL to direct download URL
+            const driveMatch = fetchUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+            if (driveMatch) {
+                fetchUrl = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+            }
+            const docResp = await fetch(fetchUrl, { redirect: 'follow' });
+            if (!docResp.ok) continue;
+            const contentType = docResp.headers.get('content-type')?.split(';')[0].trim() ?? 'application/octet-stream';
+            const docBuffer = await docResp.arrayBuffer();
+            const docBytes = new Uint8Array(docBuffer);
+            const docId = crypto.randomUUID();
+            const safeName = ((doc.name ?? 'documento') as string)
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+            const ext = contentType.includes('pdf') ? '.pdf'
+                : contentType.includes('jpeg') || contentType.includes('jpg') ? '.jpg'
+                : contentType.includes('png') ? '.png'
+                : '';
+            const storagePath = `${process.user_id}/${process_id}/linked/${docId}/${safeName}${ext}`;
+            const { error: docUploadError } = await adminClient.storage
+                .from('legal-documents')
+                .upload(storagePath, docBytes, { contentType, upsert: false });
+            if (!docUploadError) {
+                autoDocuments.push({
+                    id: docId, name: doc.name ?? safeName, storage_path: storagePath,
+                    mime_type: contentType, source_url: doc.download_url ?? null,
+                    file_size: docBytes.length, created_at: new Date().toISOString(),
+                    source: 'ai_extracted',
+                });
+            }
+        } catch {
+            // Skip failed downloads silently
         }
     }
 
@@ -278,6 +375,10 @@ serve(async (req: Request) => {
         critical_dates: Array.isArray(extracted.critical_dates) ? extracted.critical_dates : [],
         extraction_confidence: confidence,
         extraction_errors: extractionErrors,
+        process_documents: autoDocuments,
+        kanban_stage: (KANBAN_STAGES as readonly string[]).includes(extracted.kanban_stage as string)
+            ? extracted.kanban_stage
+            : 'Pendentes',
     };
 
     const { error: updateError } = await adminClient

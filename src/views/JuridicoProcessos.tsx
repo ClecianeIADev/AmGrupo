@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type DragEvent } from 'react';
 import {
   Plus,
   FolderPlus,
@@ -16,37 +16,66 @@ import {
   User,
   Building2,
   CheckCircle2,
-  GripVertical,
   RefreshCw,
   Check,
-  ChevronDown as ChevronDownIcon
+  ChevronDown as ChevronDownIcon,
+  GripVertical,
 } from 'lucide-react';
 import { ProcessDetailsModal } from '../components/juridico/ProcessDetailsModal';
 import { ProcessUploadDrawer } from '../components/juridico/ProcessUploadDrawer';
 import { ProcessSummaryCard } from '../components/juridico/ProcessSummaryCard';
 import { useLegalProcesses } from '../hooks/useLegalProcesses';
-import type { LegalProcess } from '../types/legalProcess';
+import type { LegalProcess, KanbanStage } from '../types/legalProcess';
+
+const KANBAN_STAGES: { id: KanbanStage; color: string }[] = [
+  { id: 'Pendentes',                    color: 'border-slate-400' },
+  { id: 'Aceites',                      color: 'border-blue-500' },
+  { id: 'Perícia Agendada',             color: 'border-indigo-500' },
+  { id: 'Periciado Não Compareceu',     color: 'border-orange-500' },
+  { id: 'Revisando Laudo/Impugnação',   color: 'border-amber-500' },
+  { id: 'Aguardando Manifestações',     color: 'border-purple-500' },
+  { id: 'Aguardando Pagamento',         color: 'border-red-500' },
+  { id: 'Finalizado',                   color: 'border-emerald-500' },
+  { id: 'Não Realizado',               color: 'border-rose-500' },
+];
 
 export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (view: string) => void }) {
-  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'grouped'>('list');
+  const [viewMode, setViewMode] = useState<'kanban' | 'grid' | 'grouped'>('kanban');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isNewFolderModalOpen, setIsNewFolderModalOpen] = useState(false);
   const [selectedProcess, setSelectedProcess] = useState<LegalProcess | null>(null);
   const [selectedColor, setSelectedColor] = useState('blue');
+  const [dragOverStage, setDragOverStage] = useState<KanbanStage | null>(null);
 
-  const { processes, loading, createProcess, deleteProcess, invokeAnalysis, retryAnalysis, subscribeToProcess } = useLegalProcesses();
+  const {
+    processes, loading, createProcess, deleteProcess,
+    invokeAnalysis, retryAnalysis, subscribeToProcess,
+    uploadProcessDocument, deleteProcessDocument, updateProcessStage,
+  } = useLegalProcesses();
 
   const folderColors = [
-    { id: 'blue', class: 'bg-blue-50 text-blue-500 border-blue-500' },
-    { id: 'green', class: 'bg-green-50 text-green-500 border-green-500' },
+    { id: 'blue',   class: 'bg-blue-50 text-blue-500 border-blue-500' },
+    { id: 'green',  class: 'bg-green-50 text-green-500 border-green-500' },
     { id: 'yellow', class: 'bg-yellow-50 text-yellow-500 border-yellow-500' },
     { id: 'orange', class: 'bg-orange-50 text-orange-500 border-orange-500' },
-    { id: 'red', class: 'bg-red-50 text-red-500 border-red-500' },
+    { id: 'red',    class: 'bg-red-50 text-red-500 border-red-500' },
     { id: 'purple', class: 'bg-purple-50 text-purple-500 border-purple-500' },
-    { id: 'pink', class: 'bg-pink-50 text-pink-500 border-pink-500' },
-    { id: 'slate', class: 'bg-slate-50 text-slate-500 border-slate-500' },
+    { id: 'pink',   class: 'bg-pink-50 text-pink-500 border-pink-500' },
+    { id: 'slate',  class: 'bg-slate-50 text-slate-500 border-slate-500' },
   ];
+
+  function handleDragStart(e: DragEvent<HTMLDivElement>, processId: string) {
+    e.dataTransfer.setData('processId', processId);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDrop(e: DragEvent<HTMLDivElement>, stage: KanbanStage) {
+    e.preventDefault();
+    setDragOverStage(null);
+    const processId = e.dataTransfer.getData('processId');
+    if (processId) updateProcessStage(processId, stage);
+  }
 
   return (
     <main className="flex-1 overflow-hidden p-6 lg:p-8 bg-slate-50 flex flex-col relative">
@@ -54,13 +83,13 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 shrink-0 border-b border-slate-200">
         <div className="flex gap-6">
           <button
-            onClick={() => { setViewMode('list'); setSelectedFolder(null); }}
-            className={`pb-3 px-1 font-semibold text-sm flex items-center gap-2 border-b-2 transition-colors ${viewMode === 'list'
+            onClick={() => { setViewMode('kanban'); setSelectedFolder(null); }}
+            className={`pb-3 px-1 font-semibold text-sm flex items-center gap-2 border-b-2 transition-colors ${viewMode === 'kanban'
               ? 'text-primary border-primary'
               : 'text-slate-500 hover:text-slate-800 border-transparent hover:border-slate-300'
               }`}
           >
-            <List size={18} className={viewMode === 'list' ? 'fill-primary/20' : ''} />
+            <List size={18} className={viewMode === 'kanban' ? 'fill-primary/20' : ''} />
             Processos
           </button>
           <button
@@ -76,7 +105,7 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
         </div>
 
         <div className="flex items-center gap-3">
-          {(viewMode === 'list') && (
+          {viewMode === 'kanban' && (
             <button
               onClick={() => setIsDrawerOpen(true)}
               className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm shadow-primary/20"
@@ -89,283 +118,93 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
       </div>
 
       {/* Content Area */}
-      <div className={`flex-1 overflow-y-auto ${viewMode === 'list' ? '' : 'bg-white rounded-xl border border-slate-200 shadow-sm'} relative`}>
-        {viewMode === 'list' ? (
-          <div className="h-full overflow-y-auto">
-            {/* Real Processes List */}
-            {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-2">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col gap-3 shadow-sm animate-pulse">
-                    <div className="flex items-start gap-3">
-                      <div className="size-10 rounded-lg bg-slate-100 shrink-0" />
-                      <div className="flex-1 min-w-0 flex flex-col gap-2">
+      <div className="flex-1 min-h-0 overflow-hidden">
+
+        {/* ── KANBAN BOARD ── */}
+        {viewMode === 'kanban' && (
+          loading ? (
+            /* Skeleton */
+            <div className="flex gap-4 h-full overflow-x-auto pb-4">
+              {KANBAN_STAGES.map(stage => (
+                <div key={stage.id} className="flex flex-col w-72 flex-shrink-0">
+                  <div className="h-8 bg-slate-200 rounded-lg animate-pulse mb-3" />
+                  <div className={`flex-1 bg-slate-100 rounded-xl p-2 border-t-4 ${stage.color} flex flex-col gap-3`}>
+                    {[1, 2].map(i => (
+                      <div key={i} className="bg-white rounded-xl p-4 flex flex-col gap-3 animate-pulse">
                         <div className="h-4 bg-slate-100 rounded w-3/4" />
                         <div className="h-3 bg-slate-100 rounded w-1/2" />
+                        <div className="h-6 bg-slate-100 rounded-full w-24" />
                       </div>
-                    </div>
-                    <div className="h-6 bg-slate-100 rounded-full w-28" />
-                    <div className="h-3 bg-slate-100 rounded w-full mt-auto" />
-                  </div>
-                ))}
-              </div>
-            ) : processes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-4 text-center py-16">
-                <div className="size-16 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                  <Scale size={32} className="text-indigo-400" />
-                </div>
-                <div>
-                  <p className="text-base font-bold text-slate-700">Nenhum processo ainda</p>
-                  <p className="text-sm text-slate-400 mt-1">Clique em "Novo Processo" para fazer o upload de um processo jurídico.</p>
-                </div>
-                <button
-                  onClick={() => setIsDrawerOpen(true)}
-                  className="flex items-center gap-2 bg-primary hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Plus size={18} />
-                  Novo Processo
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-2">
-                {processes.map((process) => (
-                  <ProcessSummaryCard
-                    key={process.id}
-                    process={process}
-                    onClick={(p) => setSelectedProcess(p)}
-                    onDelete={(p) => deleteProcess(p)}
-                    onRetry={(p) => retryAnalysis(p.id)}
-                  />
-                ))}
-              </div>
-            )}
-            {/* Legacy Kanban Columns — Column: Triagem */}
-            <div className="flex flex-col w-80 flex-shrink-0 max-h-full">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-slate-700">TRIAGEM</h3>
-                  <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full">3</span>
-                  <span className="text-slate-400 text-xs font-medium ml-1">R$ 0,00</span>
-                </div>
-                <button className="text-slate-400 hover:text-slate-600">
-                  <MoreHorizontal size={20} />
-                </button>
-              </div>
-              <div className="kanban-column flex-1 overflow-y-auto bg-slate-100 rounded-xl p-2 flex flex-col gap-3 border-t-4 border-slate-400">
-                {/* Card 1 */}
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-slate-800 text-sm">
-                      Indenização por Danos Morais
-                    </h4>
-                    <GripVertical size={18} className="text-slate-300 group-hover:text-slate-400" />
-                  </div>
-                  <div className="mb-3">
-                    <p className="text-xs text-slate-500 mb-0.5">Silva & Santos Logística Ltda.</p>
-                    <span className="font-bold text-slate-900"># 00124-2023</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-cover bg-center border border-white shrink-0" style={{ backgroundImage: 'url("https://i.pravatar.cc/150?u=ana")' }}></div>
-                    </div>
-                    <span className="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-1 rounded shrink-0 uppercase">
-                      Alta
-                    </span>
+                    ))}
                   </div>
                 </div>
-
-                {/* Card 2 */}
-                <div onClick={() => {}} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-slate-800 text-sm">
-                      Cobrança Indevida
-                    </h4>
-                    <GripVertical size={18} className="text-slate-300 group-hover:text-slate-400" />
-                  </div>
-                  <div className="mb-3">
-                    <p className="text-xs text-slate-500 mb-0.5">Tech Solutions SA</p>
-                    <span className="font-bold text-slate-900"># 00129-2023</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] text-primary font-bold shrink-0 shadow-sm border border-white">-</div>
-                    </div>
-                    <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded shrink-0 uppercase">
-                      Média
-                    </span>
-                  </div>
-                </div>
-
-                {/* Card 3 */}
-                <div onClick={() => {}} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-slate-800 text-sm">
-                      Revisão Contratual
-                    </h4>
-                    <GripVertical size={18} className="text-slate-300 group-hover:text-slate-400" />
-                  </div>
-                  <div className="mb-3">
-                    <p className="text-xs text-slate-500 mb-0.5">Oliveira Comércio Varejista</p>
-                    <span className="font-bold text-slate-900"># 00135-2024</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-cover bg-center border border-white shrink-0" style={{ backgroundImage: 'url("https://i.pravatar.cc/150?u=david")' }}></div>
-                    </div>
-                    <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded shrink-0 uppercase">
-                      Baixa
-                    </span>
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
+          ) : (
+            <div className="flex gap-4 h-full overflow-x-auto pb-4">
+              {KANBAN_STAGES.map(stage => {
+                const stageProcesses = processes.filter(p => (p.kanban_stage ?? 'Pendentes') === stage.id);
+                const isOver = dragOverStage === stage.id;
+                return (
+                  <div
+                    key={stage.id}
+                    className="flex flex-col w-72 flex-shrink-0 max-h-full"
+                    onDragOver={(e) => { e.preventDefault(); setDragOverStage(stage.id); }}
+                    onDragLeave={() => setDragOverStage(null)}
+                    onDrop={(e) => handleDrop(e, stage.id)}
+                  >
+                    {/* Column header */}
+                    <div className="flex items-center justify-between mb-3 px-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-slate-700 text-xs uppercase tracking-wide">{stage.id}</h3>
+                        <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full">
+                          {stageProcesses.length}
+                        </span>
+                      </div>
+                      <button className="text-slate-400 hover:text-slate-600">
+                        <MoreHorizontal size={18} />
+                      </button>
+                    </div>
 
-            {/* Column: Documentação */}
-            <div className="flex flex-col w-80 flex-shrink-0 max-h-full">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-slate-700">DOCUMENTAÇÃO</h3>
-                  <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full">2</span>
-                  <span className="text-slate-400 text-xs font-medium ml-1">R$ 0,00</span>
-                </div>
-                <button className="text-slate-400 hover:text-slate-600">
-                  <MoreHorizontal size={20} />
-                </button>
-              </div>
-
-              <div className="kanban-column flex-1 overflow-y-auto bg-slate-100 rounded-xl p-2 flex flex-col gap-3 border-t-4 border-amber-400">
-                {/* Card 4 */}
-                <div onClick={() => {}} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-slate-800 text-sm">
-                      Ação Trabalhista - Reclamação
-                    </h4>
-                    <GripVertical size={18} className="text-slate-300 group-hover:text-slate-400" />
-                  </div>
-                  <div className="mb-3">
-                    <p className="text-xs text-slate-500 mb-0.5">Grupo Varejo Nacional</p>
-                    <span className="font-bold text-slate-900"># 00892-2023</span>
-                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-amber-50 text-amber-600 text-[10px] font-medium mt-2 w-fit">
-                      <Clock size={12} />
-                      Pendente
+                    {/* Column body */}
+                    <div
+                      className={`flex-1 overflow-y-auto rounded-xl p-2 flex flex-col gap-3 border-t-4 transition-colors ${stage.color} ${
+                        isOver ? 'bg-slate-200' : 'bg-slate-100'
+                      }`}
+                    >
+                      {stageProcesses.length === 0 && !isOver && (
+                        <p className="text-xs text-slate-400 text-center py-8">Nenhum processo</p>
+                      )}
+                      {stageProcesses.map(process => (
+                        <div
+                          key={process.id}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, process.id)}
+                          className="cursor-grab active:cursor-grabbing group/drag"
+                        >
+                          {/* Drag handle row */}
+                          <div className="flex items-center justify-end px-1 pb-0.5 opacity-0 group-hover/drag:opacity-100 transition-opacity">
+                            <GripVertical size={14} className="text-slate-400" />
+                          </div>
+                          <ProcessSummaryCard
+                            process={process}
+                            onClick={(p) => setSelectedProcess(p)}
+                            onDelete={(p) => deleteProcess(p)}
+                            onRetry={(p) => retryAnalysis(p.id)}
+                          />
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-cover bg-center border border-white shrink-0" style={{ backgroundImage: 'url("https://i.pravatar.cc/150?u=michael")' }}></div>
-                    </div>
-                    <span className="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-1 rounded shrink-0 uppercase">
-                      Alta
-                    </span>
-                  </div>
-                </div>
-
-                {/* Card 5 */}
-                <div onClick={() => {}} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-slate-800 text-sm">
-                      Execução Fiscal
-                    </h4>
-                    <GripVertical size={18} className="text-slate-300 group-hover:text-slate-400" />
-                  </div>
-                  <div className="mb-3">
-                    <p className="text-xs text-slate-500 mb-0.5">Indústria e Comércio ABC</p>
-                    <span className="font-bold text-slate-900"># 00101-2022</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-cover bg-center border border-white shrink-0" style={{ backgroundImage: 'url("https://i.pravatar.cc/150?u=sarah")' }}></div>
-                    </div>
-                    <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded shrink-0 uppercase">
-                      Média
-                    </span>
-                  </div>
-                </div>
-              </div>
+                );
+              })}
             </div>
+          )
+        )}
 
-            {/* Column: Em Análise */}
-            <div className="flex flex-col w-80 flex-shrink-0 max-h-full">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-slate-700">EM ANÁLISE</h3>
-                  <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full">1</span>
-                  <span className="text-slate-400 text-xs font-medium ml-1">R$ 0,00</span>
-                </div>
-                <button className="text-slate-400 hover:text-slate-600">
-                  <MoreHorizontal size={20} />
-                </button>
-              </div>
-
-              <div className="kanban-column flex-1 overflow-y-auto bg-slate-100 rounded-xl p-2 flex flex-col gap-3 border-t-4 border-blue-500">
-                {/* Card 6 */}
-                <div onClick={() => {}} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-slate-800 text-sm">
-                      Liminar - Suspensão de Serviços
-                    </h4>
-                    <GripVertical size={18} className="text-slate-300 group-hover:text-slate-400" />
-                  </div>
-                  <div className="mb-3">
-                    <p className="text-xs text-slate-500 mb-0.5">NetConnect Telecom</p>
-                    <span className="font-bold text-slate-900"># 00155-2024</span>
-                    <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-purple-50 text-purple-600 text-[10px] font-medium mt-2 w-fit">
-                      <Clock size={12} />
-                      Prazo: 24h
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-cover bg-center border border-white shrink-0" style={{ backgroundImage: 'url("https://i.pravatar.cc/150?u=alex")' }}></div>
-                    </div>
-                    <span className="bg-red-50 text-red-600 text-[10px] font-bold px-2 py-1 rounded shrink-0 uppercase">
-                      Alta
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Column: Concluído */}
-            <div className="flex flex-col w-80 flex-shrink-0 max-h-full">
-              <div className="flex items-center justify-between mb-3 px-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-slate-700">CONCLUÍDO</h3>
-                  <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full">1</span>
-                  <span className="text-slate-400 text-xs font-medium ml-1">R$ 0,00</span>
-                </div>
-                <button className="text-slate-400 hover:text-slate-600">
-                  <MoreHorizontal size={20} />
-                </button>
-              </div>
-
-              <div className="kanban-column flex-1 overflow-y-auto bg-slate-100 rounded-xl p-2 flex flex-col gap-3 border-t-4 border-emerald-500">
-                {/* Card 7 */}
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative opacity-80 hover:opacity-100">
-                  <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-bold text-slate-800 text-sm line-through decoration-slate-400">
-                      Recurso Especial
-                    </h4>
-                    <CheckCircle2 size={18} className="text-slate-300 group-hover:text-slate-400" />
-                  </div>
-                  <div className="mb-3">
-                    <p className="text-xs text-slate-500 mb-0.5">Transportadora Veloz</p>
-                    <span className="font-bold text-emerald-600"># 00098-2022</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="size-6 rounded-full bg-cover bg-center border border-white shrink-0 grayscale" style={{ backgroundImage: 'url("https://i.pravatar.cc/150?u=ana")' }}></div>
-                    </div>
-                    <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded shrink-0 uppercase">
-                      Baixa
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : viewMode === 'grid' ? (
-          <div className="p-6 h-full flex flex-col">
+        {/* ── FOLDERS GRID ── */}
+        {viewMode === 'grid' && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 h-full flex flex-col">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div className="flex items-center gap-3">
                 <button
@@ -428,8 +267,11 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
               </div>
             </div>
           </div>
-        ) : (
-          <div className="p-6 h-full flex flex-col">
+        )}
+
+        {/* ── GROUPED FOLDER VIEW ── */}
+        {viewMode === 'grouped' && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 h-full flex flex-col">
             <div className="flex items-center justify-between text-sm text-slate-500 font-medium mb-6">
               <div className="flex items-center">
                 <Home size={18} className="mr-1" />
@@ -462,7 +304,7 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
               </div>
             </div>
 
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-6 overflow-y-auto flex-1">
               {/* Pendente Group */}
               <details className="group bg-slate-100/50 rounded-xl overflow-hidden border border-slate-200 transition-all" open>
                 <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-200/50 transition-colors list-none">
@@ -472,13 +314,10 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                     <h3 className="font-bold text-slate-700">Pendente</h3>
                     <span className="bg-white text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold border border-slate-200">2</span>
                   </div>
-                  <button className="text-slate-400 hover:text-slate-600">
-                    <MoreHorizontal size={20} />
-                  </button>
+                  <button className="text-slate-400 hover:text-slate-600"><MoreHorizontal size={20} /></button>
                 </summary>
                 <div className="p-4 pt-0 flex flex-col gap-3">
-                  {/* Process Card 1 */}
-                  <div onClick={() => {}} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
                     <div className="flex items-start gap-4 flex-1 min-w-0">
                       <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
                         <Scale className="text-purple-500" size={20} />
@@ -502,45 +341,9 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700">
-                        <Clock size={12} />
-                        Aguardando documentação
+                        <Clock size={12} />Aguardando documentação
                       </span>
-                      <button className="text-slate-400 hover:text-slate-600 p-1">
-                        <ChevronRight size={20} />
-                      </button>
-                    </div>
-                  </div>
-                  {/* Process Card 2 */}
-                  <div onClick={() => {}} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
-                    <div className="flex items-start gap-4 flex-1 min-w-0">
-                      <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
-                        <Scale className="text-purple-500" size={20} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-sm font-bold text-slate-900 truncate">0001681-53.2024.8.16.0192</h3>
-                          <span className="text-[10px] text-slate-400 font-medium px-2 py-0.5 border border-slate-200 rounded-full">Perito Judicial</span>
-                        </div>
-                        <div className="flex flex-wrap gap-4">
-                          <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                            <User className="text-orange-400" size={16} />
-                            <span className="truncate">DULCE TENFEN ANDRETTA</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                            <Building2 className="text-pink-500" size={16} />
-                            <span className="truncate">MUNICÍPIO DE CAFELÂNDIA – PR</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700">
-                        <Clock size={12} />
-                        Aguardando início
-                      </span>
-                      <button className="text-slate-400 hover:text-slate-600 p-1">
-                        <ChevronRight size={20} />
-                      </button>
+                      <button className="text-slate-400 hover:text-slate-600 p-1"><ChevronRight size={20} /></button>
                     </div>
                   </div>
                 </div>
@@ -555,13 +358,10 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                     <h3 className="font-bold text-slate-700">Em Andamento</h3>
                     <span className="bg-white text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold border border-slate-200">1</span>
                   </div>
-                  <button className="text-slate-400 hover:text-slate-600">
-                    <MoreHorizontal size={20} />
-                  </button>
+                  <button className="text-slate-400 hover:text-slate-600"><MoreHorizontal size={20} /></button>
                 </summary>
                 <div className="p-4 pt-0 flex flex-col gap-3">
-                  {/* Process Card 3 */}
-                  <div onClick={() => {}} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
                     <div className="flex items-start gap-4 flex-1 min-w-0">
                       <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
                         <Scale className="text-purple-500" size={20} />
@@ -585,12 +385,9 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
-                        <RefreshCw size={12} />
-                        Em análise
+                        <RefreshCw size={12} />Em análise
                       </span>
-                      <button className="text-slate-400 hover:text-slate-600 p-1">
-                        <ChevronRight size={20} />
-                      </button>
+                      <button className="text-slate-400 hover:text-slate-600 p-1"><ChevronRight size={20} /></button>
                     </div>
                   </div>
                 </div>
@@ -605,13 +402,10 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                     <h3 className="font-bold text-slate-700">Finalizado</h3>
                     <span className="bg-white text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold border border-slate-200">1</span>
                   </div>
-                  <button className="text-slate-400 hover:text-slate-600">
-                    <MoreHorizontal size={20} />
-                  </button>
+                  <button className="text-slate-400 hover:text-slate-600"><MoreHorizontal size={20} /></button>
                 </summary>
                 <div className="p-4 pt-0 flex flex-col gap-3">
-                  {/* Process Card 4 */}
-                  <div onClick={() => {}} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer">
                     <div className="flex items-start gap-4 flex-1 min-w-0">
                       <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
                         <Scale className="text-purple-500" size={20} />
@@ -635,12 +429,9 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-green-100 text-green-700">
-                        <CheckCircle2 size={12} />
-                        Concluído
+                        <CheckCircle2 size={12} />Concluído
                       </span>
-                      <button className="text-slate-400 hover:text-slate-600 p-1">
-                        <ChevronRight size={20} />
-                      </button>
+                      <button className="text-slate-400 hover:text-slate-600 p-1"><ChevronRight size={20} /></button>
                     </div>
                   </div>
                 </div>
@@ -741,6 +532,8 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
         isOpen={selectedProcess !== null}
         onClose={() => setSelectedProcess(null)}
         process={selectedProcess}
+        onUploadDocument={uploadProcessDocument}
+        onDeleteDocument={deleteProcessDocument}
       />
     </main>
   );

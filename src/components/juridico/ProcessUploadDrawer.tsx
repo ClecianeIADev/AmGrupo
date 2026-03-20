@@ -12,9 +12,8 @@ const ACCEPTED_MIME_TYPES = [
     'image/jpeg',
     'image/png',
     'image/webp',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
-const ACCEPTED_EXTENSIONS = '.pdf,.jpg,.jpeg,.png,.webp,.docx';
+const ACCEPTED_EXTENSIONS = '.pdf,.jpg,.jpeg,.png,.webp';
 const ROLES: ProcessRole[] = ['Perito', 'Assistente Técnico', 'Advogado', 'Outro'];
 
 interface ProcessUploadDrawerProps {
@@ -218,7 +217,7 @@ export function ProcessUploadDrawer({
                                         <p className="text-sm font-semibold text-slate-600">
                                             Arraste o arquivo ou <span className="text-indigo-600 underline">clique para selecionar</span>
                                         </p>
-                                        <p className="text-xs text-slate-400 mt-1">PDF, DOCX, JPG, PNG — até 50 MB</p>
+                                        <p className="text-xs text-slate-400 mt-1">PDF, JPG, PNG — até 50 MB</p>
                                     </div>
                                 )}
                                 <input

@@ -188,7 +188,7 @@ The following stages comprise the legal process workflow in the Contencioso Cív
 
 ### Functional Requirements
 
-- **FR-001**: System MUST accept PDF, DOCX, JPG, PNG, and scanned image formats for legal process upload
+- **FR-001**: System MUST accept PDF, JPG, PNG, and scanned image formats for legal process upload
 - **FR-002**: System MUST extract and store the following entities from uploaded documents: parties, judges, dates, deadlines, quesitos, and document attachments
 - **FR-003**: System MUST display a time estimate warning (5 minutes expected) before AI analysis begins, informing users of expected processing duration
 - **FR-004**: System MUST display a chronological Process Summary of all major case events with accurate date sequencing

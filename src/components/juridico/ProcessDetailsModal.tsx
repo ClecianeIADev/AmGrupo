@@ -1,7 +1,7 @@
 // T027–T034: ProcessDetailsModal
 // Displays full AI-extracted legal process data in a 5-tab modal.
 
-import { useState, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useCallback, type ReactNode, type ChangeEvent } from 'react';
 import {
     X,
     Scale,
@@ -16,19 +16,23 @@ import {
     Clock,
     ChevronDown,
     ChevronRight,
-    Lock,
     Download,
     Loader,
     Building2,
-    Users,
+    Paperclip,
+    Trash2,
+    Plus,
+    ExternalLink,
 } from 'lucide-react';
-import type { LegalProcess } from '../../types/legalProcess';
+import type { LegalProcess, ProcessDocument } from '../../types/legalProcess';
 import { supabase } from '../../lib/supabase';
 
 interface ProcessDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
     process: LegalProcess | null;
+    onUploadDocument?: (processId: string, file: File) => Promise<LegalProcess | null>;
+    onDeleteDocument?: (processId: string, docId: string, storagePath: string) => Promise<LegalProcess | null>;
 }
 
 type Tab = 'executive' | 'summary' | 'quesitos' | 'documents' | 'examinations';
@@ -96,6 +100,102 @@ function extractPartyByRole(parties: LegalProcess['parties'], roles: string[]): 
         roles.some(r => p.role?.toLowerCase().includes(r))
     );
     return match?.name ?? null;
+}
+
+// ── PDF print builder ─────────────────────────────────────────────────────────
+function escHtml(s: string | null | undefined): string {
+    return (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function buildPrintHtml(proc: LegalProcess, tab: Tab, title: string, tabLabel: string): string {
+    const css = `
+        body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:20mm;line-height:1.5}
+        h1{font-size:20px;font-weight:bold;margin:0 0 4px}
+        h2{font-size:14px;font-weight:bold;color:#475569;margin:20px 0 8px;padding-bottom:4px;border-bottom:1px solid #e2e8f0}
+        h3{font-size:12px;font-weight:bold;color:#64748b;margin:12px 0 4px}
+        p{margin:0 0 8px}
+        .num{color:#6366f1;font-family:monospace;font-size:11px}
+        .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:bold;background:#f1f5f9;color:#475569;margin:0 4px 4px 0}
+        .card{border:1px solid #e2e8f0;border-radius:6px;padding:12px;margin-bottom:10px;page-break-inside:avoid}
+        .fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+        .field{padding:8px;border:1px solid #e2e8f0;border-radius:4px}
+        .field-label{font-size:10px;font-weight:bold;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+        .field-value{font-size:12px;font-weight:bold}
+        .field-full{grid-column:1/-1}
+        .tl{padding:8px 0 8px 16px;border-left:2px solid #e2e8f0;margin-left:8px;margin-bottom:4px}
+        .tl-date{font-size:11px;font-weight:bold;color:#6366f1}
+        .q{display:flex;gap:8px;margin-bottom:8px;page-break-inside:avoid}
+        .q-num{width:22px;height:22px;background:#eef2ff;color:#6366f1;border-radius:50%;text-align:center;line-height:22px;font-weight:bold;font-size:10px;flex-shrink:0}
+        .priority-high{background:#fef2f2;color:#b91c1c}
+        .priority-medium{background:#fffbeb;color:#92400e}
+        .priority-low{background:#f8fafc;color:#475569}
+        footer{margin-top:32px;font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px}
+        @media print{body{padding:10mm}}
+    `;
+
+    let body = '';
+
+    if (tab === 'executive') {
+        const autor = proc.parties?.find(p => ['autor', 'autora', 'requerente', 'reclamante', 'apelante', 'impetrante'].some(r => p.role?.toLowerCase().includes(r)))?.name;
+        const reu = proc.parties?.find(p => ['réu', 'reu', 'requerido', 'reclamado', 'apelado', 'impetrado'].some(r => p.role?.toLowerCase().includes(r)))?.name;
+        const orgao = proc.parties?.find(p => ['órgão julgador', 'tribunal', 'juízo', 'vara', 'turma'].some(r => p.role?.toLowerCase().includes(r)))?.name;
+
+        body += '<div class="fields">';
+        if (proc.process_number) body += `<div class="field field-full"><div class="field-label">Processo</div><div class="field-value" style="font-family:monospace">${escHtml(proc.process_number)}</div></div>`;
+        if (orgao) body += `<div class="field field-full"><div class="field-label">Órgão Julgador</div><div class="field-value">${escHtml(orgao)}</div></div>`;
+        if (autor) body += `<div class="field"><div class="field-label">Autor</div><div class="field-value">${escHtml(autor)}</div></div>`;
+        if (reu) body += `<div class="field"><div class="field-label">Réu</div><div class="field-value">${escHtml(reu)}</div></div>`;
+        body += '</div>';
+
+        if (proc.executive_summary) {
+            body += `<h2>Resumo Executivo</h2><p>${escHtml(proc.executive_summary).replace(/\n/g, '<br>')}</p>`;
+        }
+        if (proc.critical_dates?.length) {
+            body += '<h2>Datas Críticas</h2>';
+            for (const cd of proc.critical_dates) {
+                body += `<div class="card"><strong>${escHtml(cd.date)}</strong> — ${escHtml(cd.description)}</div>`;
+            }
+        }
+    } else if (tab === 'summary') {
+        if (proc.process_summary) {
+            body += `<h2>Resumo do Processo</h2><p>${escHtml(proc.process_summary).replace(/\n/g, '<br>')}</p>`;
+        }
+        if (proc.events_timeline?.length) {
+            body += '<h2>Linha do Tempo</h2>';
+            const sorted = [...proc.events_timeline].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            for (const ev of sorted) {
+                body += `<div class="tl"><div class="tl-date">${escHtml(ev.date)}</div><div>${escHtml(ev.event)}</div>${ev.outcome ? `<div style="color:#64748b;font-style:italic;font-size:11px">${escHtml(ev.outcome)}</div>` : ''}</div>`;
+            }
+        }
+    } else if (tab === 'quesitos') {
+        const grouped: Record<string, typeof proc.quesitos> = {};
+        for (const q of (proc.quesitos ?? [])) {
+            const party = q.party || 'Sem parte';
+            if (!grouped[party]) grouped[party] = [];
+            grouped[party].push(q);
+        }
+        for (const [party, qs] of Object.entries(grouped)) {
+            body += `<h2>${escHtml(party)}</h2>`;
+            qs.forEach((q, i) => {
+                body += `<div class="q"><div class="q-num">${i + 1}</div><div>${escHtml(q.text)}${q.source_page ? ` <span style="color:#94a3b8;font-size:10px">(Pág. ${q.source_page})</span>` : ''}</div></div>`;
+            });
+        }
+    } else if (tab === 'examinations') {
+        body += `<h2>Exames Sugeridos pela IA</h2>`;
+        for (const exam of (proc.suggested_examinations ?? [])) {
+            const pClass = exam.priority === 'critical' ? 'priority-high' : exam.priority === 'recommended' ? 'priority-medium' : 'priority-low';
+            const pLabel = exam.priority === 'critical' ? 'Alta' : exam.priority === 'recommended' ? 'Média' : 'Baixa';
+            body += `<div class="card"><h3>${escHtml(exam.name)} <span class="badge ${pClass}">${pLabel}</span></h3><p>${escHtml(exam.justification)}</p></div>`;
+        }
+    }
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escHtml(title)} — ${escHtml(tabLabel)}</title><style>${css}</style></head><body>
+<h1>${escHtml(title)}</h1>${proc.process_number ? `<div class="num">${escHtml(proc.process_number)}</div>` : ''}
+<div style="color:#6366f1;font-size:13px;font-weight:bold;margin:4px 0 16px">${escHtml(tabLabel)}</div>
+<hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 16px">
+${body}
+<footer>Gerado em ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</footer>
+</body></html>`;
 }
 
 // ── Tab: Executive Summary ───────────────────────────────────────────────────
@@ -289,49 +389,199 @@ function QuesitosTab({ process }: { process: LegalProcess }) {
     );
 }
 
-// ── Tab: Relevant Documents ───────────────────────────────────────────────────
-function DocumentsTab({ process }: { process: LegalProcess }) {
-    const docs = [...(process.relevant_documents ?? [])].sort((a, b) => {
+// ── Tab: Documents ────────────────────────────────────────────────────────────
+interface DocumentsTabProps {
+    process: LegalProcess;
+    onUploadDocument?: (processId: string, file: File) => Promise<LegalProcess | null>;
+    onDeleteDocument?: (processId: string, docId: string, storagePath: string) => Promise<LegalProcess | null>;
+    onProcessUpdated: (p: LegalProcess) => void;
+}
+
+function DocumentsTab({ process, onUploadDocument, onDeleteDocument, onProcessUpdated }: DocumentsTabProps) {
+    const [uploading, setUploading] = useState(false);
+    const [openingDoc, setOpeningDoc] = useState<string | null>(null);
+    const [deletingDoc, setDeletingDoc] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (!file || !onUploadDocument) return;
+        setUploading(true);
+        const updated = await onUploadDocument(process.id, file);
+        if (updated) onProcessUpdated(updated);
+        setUploading(false);
+        e.target.value = '';
+    }
+
+    async function handleOpenDoc(doc: ProcessDocument) {
+        setOpeningDoc(doc.id);
+        try {
+            const { data, error } = await supabase.storage
+                .from('legal-documents')
+                .createSignedUrl(doc.storage_path, 300);
+            if (error || !data?.signedUrl) throw error ?? new Error('Erro ao gerar link');
+            window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+        } catch {
+            alert('Não foi possível abrir o documento.');
+        } finally {
+            setOpeningDoc(null);
+        }
+    }
+
+    async function handleDeleteDoc(doc: ProcessDocument) {
+        if (!onDeleteDocument) return;
+        if (!window.confirm(`Excluir "${doc.name}"?`)) return;
+        setDeletingDoc(doc.id);
+        const updated = await onDeleteDocument(process.id, doc.id, doc.storage_path);
+        if (updated) onProcessUpdated(updated);
+        setDeletingDoc(null);
+    }
+
+    const attachedDocs = process.process_documents ?? [];
+    const aiDocs = [...(process.relevant_documents ?? [])].sort((a, b) => {
         if (!a.date) return 1;
         if (!b.date) return -1;
         return new Date(a.date).getTime() - new Date(b.date).getTime();
     });
 
-    if (docs.length === 0) {
-        return <EmptyState message="Nenhum documento relevante identificado." />;
-    }
-
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {docs.map((doc, i) => {
-                const categoryCls = CATEGORY_STYLES[doc.category] ?? 'bg-slate-100 text-slate-600';
-                return (
-                    <div key={i} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col gap-3">
-                        <div className="flex items-start justify-between gap-2">
-                            <p className="text-sm font-bold text-slate-800 leading-tight">{doc.name}</p>
-                            {doc.category && (
-                                <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${categoryCls}`}>
-                                    {doc.category}
-                                </span>
-                            )}
-                        </div>
-                        {doc.summary && (
-                            <p className="text-xs text-slate-500 leading-relaxed">{doc.summary}</p>
-                        )}
-                        <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-100">
-                            <span>{doc.type}</span>
-                            {doc.date && <span>{formatDate(doc.date)}</span>}
-                        </div>
-                        {doc.parties?.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                                {doc.parties.map((p, j) => (
-                                    <span key={j} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{p}</span>
-                                ))}
-                            </div>
-                        )}
+        <div className="flex flex-col gap-6">
+            {/* Attached files section */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Paperclip size={14} className="text-slate-400" />
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                            Documentos Anexados ({attachedDocs.length})
+                        </h4>
                     </div>
-                );
-            })}
+                    {onUploadDocument && (
+                        <>
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={uploading}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors disabled:opacity-60"
+                            >
+                                {uploading ? <Loader size={12} className="animate-spin" /> : <Plus size={12} />}
+                                {uploading ? 'Enviando...' : 'Adicionar documento'}
+                            </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                className="hidden"
+                                onChange={handleFileChange}
+                            />
+                        </>
+                    )}
+                </div>
+
+                {attachedDocs.length === 0 ? (
+                    <div className="px-5 py-10 text-center">
+                        <p className="text-sm text-slate-400">Nenhum documento anexado ainda.</p>
+                        <p className="text-xs text-slate-300 mt-1">Adicione arquivos manualmente ou eles serão identificados automaticamente durante a análise.</p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-slate-100">
+                        {attachedDocs.map((doc) => (
+                            <div key={doc.id} className="flex items-center gap-3 px-5 py-3">
+                                <div className="size-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                                    <FileText size={15} className="text-indigo-500" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-slate-800 truncate">{doc.name}</p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        {doc.source === 'ai_extracted' && (
+                                            <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded font-medium">IA</span>
+                                        )}
+                                        {doc.file_size && (
+                                            <span className="text-xs text-slate-400">{(doc.file_size / 1024).toFixed(0)} KB</span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                        onClick={() => handleOpenDoc(doc)}
+                                        disabled={openingDoc === doc.id}
+                                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                        title="Abrir arquivo"
+                                    >
+                                        {openingDoc === doc.id
+                                            ? <Loader size={15} className="animate-spin" />
+                                            : <ExternalLink size={15} />
+                                        }
+                                    </button>
+                                    {onDeleteDocument && (
+                                        <button
+                                            onClick={() => handleDeleteDoc(doc)}
+                                            disabled={deletingDoc === doc.id}
+                                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Excluir documento"
+                                        >
+                                            {deletingDoc === doc.id
+                                                ? <Loader size={15} className="animate-spin" />
+                                                : <Trash2 size={15} />
+                                            }
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* AI-identified documents (metadata only) */}
+            {aiDocs.length > 0 && (
+                <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3 px-1 flex items-center gap-2">
+                        <Sparkles size={12} className="text-purple-400" />
+                        Documentos Identificados pela IA
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {aiDocs.map((doc, i) => {
+                            const categoryCls = CATEGORY_STYLES[doc.category] ?? 'bg-slate-100 text-slate-600';
+                            return (
+                                <div key={i} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col gap-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <p className="text-sm font-bold text-slate-800 leading-tight">{doc.name}</p>
+                                        {doc.category && (
+                                            <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${categoryCls}`}>
+                                                {doc.category}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {doc.summary && (
+                                        <p className="text-xs text-slate-500 leading-relaxed">{doc.summary}</p>
+                                    )}
+                                    <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-100">
+                                        <span>{doc.type}</span>
+                                        {doc.date && <span>{formatDate(doc.date)}</span>}
+                                    </div>
+                                    {doc.parties?.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                            {doc.parties.map((p, j) => (
+                                                <span key={j} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{p}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {doc.download_url && (
+                                        <a
+                                            href={doc.download_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                                        >
+                                            <ExternalLink size={12} />
+                                            Ver arquivo original
+                                        </a>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -775,23 +1025,45 @@ function ExaminationsTab({ process }: { process: LegalProcess }) {
 }
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
-export function ProcessDetailsModal({ isOpen, onClose, process }: ProcessDetailsModalProps) {
+export function ProcessDetailsModal({
+    isOpen,
+    onClose,
+    process,
+    onUploadDocument,
+    onDeleteDocument,
+}: ProcessDetailsModalProps) {
     const [activeTab, setActiveTab] = useState<Tab>('executive');
     const [downloadingDoc, setDownloadingDoc] = useState(false);
+    const [localProcess, setLocalProcess] = useState<LegalProcess | null>(null);
 
-    if (!isOpen || !process) return null;
+    useEffect(() => { if (process) setLocalProcess(process); }, [process]);
 
-    const displayName = process.process_name ?? process.document_name;
-    const isError = process.status === 'error';
-    const needsReview = process.status === 'needs_review';
-    const isProcessing = process.status === 'processing';
+    const handlePrintTab = useCallback(() => {
+        if (!localProcess) return;
+        const title = localProcess.process_name ?? localProcess.document_name;
+        const tabLabel = TABS.find(t => t.id === activeTab)?.label ?? activeTab;
+        const html = buildPrintHtml(localProcess, activeTab as Tab, title, tabLabel);
+        const win = window.open('', '_blank', 'width=900,height=700');
+        if (!win) return;
+        win.document.write(html);
+        win.document.close();
+        win.focus();
+        setTimeout(() => { win.print(); }, 600);
+    }, [localProcess, activeTab]);
+
+    if (!isOpen || !process || !localProcess) return null;
+
+    const displayName = localProcess.process_name ?? localProcess.document_name;
+    const isError = localProcess.status === 'error';
+    const needsReview = localProcess.status === 'needs_review';
+    const isProcessing = localProcess.status === 'processing';
 
     async function handleDownloadDocument() {
         setDownloadingDoc(true);
         try {
             const { data, error } = await supabase.storage
                 .from('legal-documents')
-                .createSignedUrl(process!.document_path, 300);
+                .createSignedUrl(localProcess.document_path, 300);
             if (error || !data?.signedUrl) throw error ?? new Error('URL não gerada');
             window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
         } catch {
@@ -815,18 +1087,18 @@ export function ProcessDetailsModal({ isOpen, onClose, process }: ProcessDetails
                             <div className="flex flex-col gap-2">
                                 <h2 className="text-2xl font-bold text-slate-800">{displayName}</h2>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    {process.process_number && (
+                                    {localProcess.process_number && (
                                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 font-mono">
-                                            {process.process_number}
+                                            {localProcess.process_number}
                                         </span>
                                     )}
                                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700">
                                         <span className="size-1.5 rounded-full bg-indigo-500" />
-                                        {process.professional_role}
+                                        {localProcess.professional_role}
                                     </span>
-                                    {process.parties?.length > 0 && (
+                                    {localProcess.parties?.length > 0 && (
                                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
-                                            {process.parties.length} partes
+                                            {localProcess.parties.length} partes
                                             <ChevronDown size={12} />
                                         </span>
                                     )}
@@ -837,7 +1109,7 @@ export function ProcessDetailsModal({ isOpen, onClose, process }: ProcessDetails
                             <button
                                 onClick={handleDownloadDocument}
                                 disabled={downloadingDoc}
-                                title={`Abrir documento: ${process.document_name}`}
+                                title={`Abrir documento: ${localProcess.document_name}`}
                                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors disabled:opacity-60"
                             >
                                 {downloadingDoc
@@ -861,7 +1133,7 @@ export function ProcessDetailsModal({ isOpen, onClose, process }: ProcessDetails
                             <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
                             <p className="text-sm text-amber-800">
                                 <span className="font-bold">Revisão necessária: </span>
-                                {process.status_message ?? 'A extração por IA pode conter imprecisões. Revise os dados antes de usar.'}
+                                {localProcess.status_message ?? 'A extração por IA pode conter imprecisões. Revise os dados antes de usar.'}
                             </p>
                         </div>
                     )}
@@ -872,7 +1144,7 @@ export function ProcessDetailsModal({ isOpen, onClose, process }: ProcessDetails
                             <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                             <p className="text-sm text-red-800">
                                 <span className="font-bold">Erro na análise: </span>
-                                {process.status_message ?? 'A extração por IA falhou.'}
+                                {localProcess.status_message ?? 'A extração por IA falhou.'}
                             </p>
                         </div>
                     )}
@@ -896,11 +1168,10 @@ export function ProcessDetailsModal({ isOpen, onClose, process }: ProcessDetails
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`pb-4 px-1 text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
-                                    activeTab === tab.id
-                                        ? 'text-indigo-600 border-indigo-600'
-                                        : 'text-slate-500 border-transparent hover:text-slate-800 hover:border-slate-300'
-                                }`}
+                                className={`pb-4 px-1 text-sm font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === tab.id
+                                    ? 'text-indigo-600 border-indigo-600'
+                                    : 'text-slate-500 border-transparent hover:text-slate-800 hover:border-slate-300'
+                                    }`}
                             >
                                 {tab.icon}
                                 {tab.label}
@@ -913,25 +1184,31 @@ export function ProcessDetailsModal({ isOpen, onClose, process }: ProcessDetails
                 <div className="p-8 overflow-y-auto flex-1 bg-slate-50/50">
                     <div className="max-w-[1000px] mx-auto">
 
-                        {/* Export header (shown on all tabs) */}
-                        {!isProcessing && !isError && (
+                        {/* Export button (shown on all tabs except documents) */}
+                        {!isProcessing && !isError && activeTab !== 'documents' && (
                             <div className="flex justify-end gap-3 mb-6">
-                                <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors shadow-sm">
-                                    <Lock size={16} className="text-slate-400" />
-                                    PDF
-                                </button>
-                                <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors shadow-sm">
-                                    <Lock size={16} className="text-slate-400" />
-                                    DOCX
+                                <button
+                                    onClick={handlePrintTab}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors shadow-sm"
+                                >
+                                    <FileText size={16} className="text-slate-400" />
+                                    Exportar PDF
                                 </button>
                             </div>
                         )}
 
-                        {activeTab === 'executive' && <ExecutiveSummaryTab process={process} />}
-                        {activeTab === 'summary' && <ProcessSummaryTab process={process} />}
-                        {activeTab === 'quesitos' && <QuesitosTab process={process} />}
-                        {activeTab === 'documents' && <DocumentsTab process={process} />}
-                        {activeTab === 'examinations' && <ExaminationsTab process={process} />}
+                        {activeTab === 'executive' && <ExecutiveSummaryTab process={localProcess} />}
+                        {activeTab === 'summary' && <ProcessSummaryTab process={localProcess} />}
+                        {activeTab === 'quesitos' && <QuesitosTab process={localProcess} />}
+                        {activeTab === 'documents' && (
+                            <DocumentsTab
+                                process={localProcess}
+                                onUploadDocument={onUploadDocument}
+                                onDeleteDocument={onDeleteDocument}
+                                onProcessUpdated={setLocalProcess}
+                            />
+                        )}
+                        {activeTab === 'examinations' && <ExaminationsTab process={localProcess} />}
                     </div>
                 </div>
             </div>

@@ -1,5 +1,16 @@
 // Types for the Legal Process Summaries feature (001-legal-summaries)
 
+export type KanbanStage =
+    | 'Pendentes'
+    | 'Aceites'
+    | 'Perícia Agendada'
+    | 'Periciado Não Compareceu'
+    | 'Revisando Laudo/Impugnação'
+    | 'Aguardando Manifestações'
+    | 'Aguardando Pagamento'
+    | 'Finalizado'
+    | 'Não Realizado';
+
 export type ProcessStatus =
     | 'pending'
     | 'processing'
@@ -39,6 +50,18 @@ export interface RelevantDocument {
     date: string | null;
     parties: string[];
     summary: string;
+    download_url?: string | null;
+}
+
+export interface ProcessDocument {
+    id: string;
+    name: string;
+    storage_path: string;
+    mime_type: string | null;
+    source_url: string | null;
+    file_size: number | null;
+    created_at: string;
+    source: 'ai_extracted' | 'manual';
 }
 
 export interface SuggestedExamination {
@@ -73,8 +96,10 @@ export interface LegalProcess {
     relevant_documents: RelevantDocument[];
     suggested_examinations: SuggestedExamination[];
     critical_dates: CriticalDate[];
+    process_documents: ProcessDocument[];
     extraction_confidence: number | null;
     extraction_errors: string[];
+    kanban_stage: KanbanStage;
     created_at: string;
     updated_at: string;
 }

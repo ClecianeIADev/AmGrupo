@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import type { LegalProcess, ProcessRole } from '../types/legalProcess';
+import type { LegalProcess, ProcessRole, ProcessDocument, KanbanStage } from '../types/legalProcess';
 
 interface UseLegalProcessesReturn {
     processes: LegalProcess[];
@@ -20,6 +20,9 @@ interface UseLegalProcessesReturn {
         processId: string,
         onUpdate: (updated: LegalProcess) => void
     ) => () => void;
+    uploadProcessDocument: (processId: string, file: File) => Promise<LegalProcess | null>;
+    deleteProcessDocument: (processId: string, docId: string, storagePath: string) => Promise<LegalProcess | null>;
+    updateProcessStage: (processId: string, stage: KanbanStage) => Promise<void>;
 }
 
 export function useLegalProcesses(): UseLegalProcessesReturn {
@@ -58,7 +61,12 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
 
                 // Generate a temporary ID for the storage path before DB insert
                 const tempId = crypto.randomUUID();
-                const storagePath = `${user.id}/${tempId}/${file.name}`;
+                // Sanitize filename for Storage: remove diacritics and replace non-ASCII chars
+                const sanitizedName = file.name
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')       // strip diacritics
+                    .replace(/[^a-zA-Z0-9._\-]/g, '_');    // replace remaining specials
+                const storagePath = `${user.id}/${tempId}/${sanitizedName}`;
 
                 // 1. Upload file to Supabase Storage
                 const { error: uploadError } = await supabase.storage
@@ -261,6 +269,103 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
         []
     );
 
+    const uploadProcessDocument = useCallback(
+        async (processId: string, file: File): Promise<LegalProcess | null> => {
+            setError(null);
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error('Usuário não autenticado.');
+
+                const docId = crypto.randomUUID();
+                const sanitizedName = file.name
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._\-]/g, '_');
+                const storagePath = `${user.id}/${processId}/manual/${docId}/${sanitizedName}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('legal-documents')
+                    .upload(storagePath, file, { upsert: false });
+                if (uploadError) throw uploadError;
+
+                // Fetch current process_documents and append
+                const { data: current, error: fetchErr } = await supabase
+                    .from('legal_processes').select('process_documents').eq('id', processId).single();
+                if (fetchErr) throw fetchErr;
+
+                const existing: ProcessDocument[] = (current as any).process_documents ?? [];
+                const newDoc: ProcessDocument = {
+                    id: docId, name: file.name, storage_path: storagePath,
+                    mime_type: file.type || null, source_url: null,
+                    file_size: file.size, created_at: new Date().toISOString(),
+                    source: 'manual',
+                };
+                const updated = [...existing, newDoc];
+
+                const { data: updatedProcess, error: updateErr } = await supabase
+                    .from('legal_processes')
+                    .update({ process_documents: updated })
+                    .eq('id', processId)
+                    .select().single();
+                if (updateErr) throw updateErr;
+
+                const result = updatedProcess as LegalProcess;
+                setProcesses(prev => prev.map(p => p.id === processId ? result : p));
+                return result;
+            } catch (err: any) {
+                setError(err.message ?? 'Erro ao fazer upload do documento.');
+                return null;
+            }
+        },
+        []
+    );
+
+    const deleteProcessDocument = useCallback(
+        async (processId: string, docId: string, storagePath: string): Promise<LegalProcess | null> => {
+            setError(null);
+            try {
+                await supabase.storage.from('legal-documents').remove([storagePath]);
+
+                const { data: current, error: fetchErr } = await supabase
+                    .from('legal_processes').select('process_documents').eq('id', processId).single();
+                if (fetchErr) throw fetchErr;
+
+                const existing: ProcessDocument[] = (current as any).process_documents ?? [];
+                const updated = existing.filter(d => d.id !== docId);
+
+                const { data: updatedProcess, error: updateErr } = await supabase
+                    .from('legal_processes')
+                    .update({ process_documents: updated })
+                    .eq('id', processId)
+                    .select().single();
+                if (updateErr) throw updateErr;
+
+                const result = updatedProcess as LegalProcess;
+                setProcesses(prev => prev.map(p => p.id === processId ? result : p));
+                return result;
+            } catch (err: any) {
+                setError(err.message ?? 'Erro ao excluir documento.');
+                return null;
+            }
+        },
+        []
+    );
+
+    const updateProcessStage = useCallback(
+        async (processId: string, stage: KanbanStage): Promise<void> => {
+            // Optimistic update
+            setProcesses(prev => prev.map(p => p.id === processId ? { ...p, kanban_stage: stage } : p));
+            const { error: updateError } = await supabase
+                .from('legal_processes')
+                .update({ kanban_stage: stage })
+                .eq('id', processId);
+            if (updateError) {
+                setError(updateError.message);
+                // Revert by refetching
+                fetchProcesses();
+            }
+        },
+        [fetchProcesses]
+    );
+
     return {
         processes,
         loading,
@@ -272,5 +377,8 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
         retryAnalysis,
         getDocumentUrl,
         subscribeToProcess,
+        uploadProcessDocument,
+        deleteProcessDocument,
+        updateProcessStage,
     };
 }
