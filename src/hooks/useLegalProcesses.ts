@@ -15,6 +15,7 @@ interface UseLegalProcessesReturn {
     deleteProcess: (process: LegalProcess) => Promise<void>;
     invokeAnalysis: (processId: string) => Promise<void>;
     retryAnalysis: (processId: string) => Promise<void>;
+    getDocumentUrl: (documentPath: string) => Promise<string | null>;
     subscribeToProcess: (
         processId: string,
         onUpdate: (updated: LegalProcess) => void
@@ -120,22 +121,24 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
 
     const invokeAnalysis = useCallback(async (processId: string): Promise<void> => {
         setError(null);
-        try {
-            const { error: fnError } = await supabase.functions.invoke(
-                'analyze_legal_process',
-                { body: { process_id: processId } }
-            );
-            if (fnError) throw fnError;
-        } catch (err: any) {
-            setError(err.message ?? 'Erro ao iniciar análise.');
-            // Mark process as error in local state
-            setProcesses(prev =>
-                prev.map(p =>
-                    p.id === processId
-                        ? { ...p, status: 'error', status_message: err.message }
-                        : p
-                )
-            );
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Sessão expirada. Faça login novamente.');
+        const { error: fnError } = await supabase.functions.invoke(
+            'analyze_legal_process',
+            {
+                body: { process_id: processId },
+                headers: { Authorization: `Bearer ${session.access_token}` },
+            }
+        );
+        if (fnError) {
+            // Try to extract the actual error body from the function response
+            let msg = fnError.message ?? 'Erro ao iniciar análise.';
+            try {
+                const body = await (fnError as any).context?.json?.();
+                if (body?.error) msg = body.error;
+            } catch { /* ignore parse errors */ }
+            setError(msg);
+            throw new Error(msg);
         }
     }, []);
 
@@ -151,12 +154,45 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
             setProcesses(prev =>
                 prev.map(p => p.id === processId ? { ...p, status: 'pending', status_message: null } : p)
             );
-            // Then invoke analysis
-            const { error: fnError } = await supabase.functions.invoke(
-                'analyze_legal_process',
-                { body: { process_id: processId } }
-            );
-            if (fnError) throw fnError;
+
+            // Subscribe BEFORE invoking (Realtime + polling fallback)
+            const TERMINAL: LegalProcess['status'][] = ['completed', 'needs_review', 'error'];
+            let done = false;
+
+            const channel = supabase
+                .channel(`retry-process-${processId}`)
+                .on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: 'legal_processes', filter: `id=eq.${processId}` },
+                    (payload) => {
+                        const updated = payload.new as LegalProcess;
+                        setProcesses((prev: LegalProcess[]) => prev.map((p: LegalProcess) => p.id === processId ? updated : p));
+                        if (TERMINAL.includes(updated.status)) { done = true; cleanup(); }
+                    }
+                )
+                .subscribe();
+
+            const pollTimer = setInterval(async () => {
+                if (done) return;
+                const { data } = await supabase
+                    .from('legal_processes').select('*').eq('id', processId).single();
+                if (data) {
+                    const updated = data as LegalProcess;
+                    setProcesses((prev: LegalProcess[]) => prev.map((p: LegalProcess) => p.id === processId ? updated : p));
+                    if (TERMINAL.includes(updated.status)) { done = true; cleanup(); }
+                }
+            }, 8000);
+
+            function cleanup() { clearInterval(pollTimer); supabase.removeChannel(channel); }
+
+            // Fire-and-forget — Realtime + polling handle the result
+            const { data: { session } } = await supabase.auth.getSession();
+            supabase.functions
+                .invoke('analyze_legal_process', {
+                    body: { process_id: processId },
+                    headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+                })
+                .catch(() => cleanup());
         } catch (err: any) {
             setError(err.message ?? 'Erro ao tentar novamente.');
             setProcesses(prev =>
@@ -165,8 +201,30 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
         }
     }, []);
 
+    const getDocumentUrl = useCallback(async (documentPath: string): Promise<string | null> => {
+        const { data, error } = await supabase.storage
+            .from('legal-documents')
+            .createSignedUrl(documentPath, 300); // 5-minute signed URL
+        if (error || !data?.signedUrl) return null;
+        return data.signedUrl;
+    }, []);
+
     const subscribeToProcess = useCallback(
         (processId: string, onUpdate: (updated: LegalProcess) => void): (() => void) => {
+            const TERMINAL: LegalProcess['status'][] = ['completed', 'needs_review', 'error'];
+            let done = false;
+
+            function handleUpdate(updated: LegalProcess) {
+                if (done) return;
+                setProcesses(prev => prev.map(p => (p.id === processId ? updated : p)));
+                onUpdate(updated);
+                if (TERMINAL.includes(updated.status)) {
+                    done = true;
+                    cleanup();
+                }
+            }
+
+            // Primary: Supabase Realtime postgres_changes
             const channel = supabase
                 .channel(`legal-process-${processId}`)
                 .on(
@@ -177,27 +235,28 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
                         table: 'legal_processes',
                         filter: `id=eq.${processId}`,
                     },
-                    (payload) => {
-                        const updated = payload.new as LegalProcess;
-                        // Update processes list in state
-                        setProcesses(prev =>
-                            prev.map(p => (p.id === processId ? updated : p))
-                        );
-                        onUpdate(updated);
-                        // Unsubscribe when process reaches a terminal state
-                        const terminalStates: LegalProcess['status'][] = [
-                            'completed', 'needs_review', 'error',
-                        ];
-                        if (terminalStates.includes(updated.status)) {
-                            supabase.removeChannel(channel);
-                        }
-                    }
+                    (payload) => handleUpdate(payload.new as LegalProcess)
                 )
                 .subscribe();
 
-            return () => {
+            // Fallback: poll every 8 s in case Realtime is not enabled on the table
+            // or a network hiccup drops the event.
+            const pollTimer = setInterval(async () => {
+                if (done) return;
+                const { data } = await supabase
+                    .from('legal_processes')
+                    .select('*')
+                    .eq('id', processId)
+                    .single();
+                if (data) handleUpdate(data as LegalProcess);
+            }, 8000);
+
+            function cleanup() {
+                clearInterval(pollTimer);
                 supabase.removeChannel(channel);
-            };
+            }
+
+            return cleanup;
         },
         []
     );
@@ -211,6 +270,7 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
         deleteProcess,
         invokeAnalysis,
         retryAnalysis,
+        getDocumentUrl,
         subscribeToProcess,
     };
 }

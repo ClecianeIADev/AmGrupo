@@ -137,6 +137,45 @@ Based on the damages claimed and case circumstances, the AI system suggests rele
 
 ---
 
+### User Story 8 - Kanban Processos Management (Priority: P1)
+
+Users can view and manage legal processes through a Kanban board in the Juridico > Pipelines > Contencioso Cível view, with processes organized by workflow stages. The system supports initial stage selection during process creation and automatic AI-driven stage assignment based on document analysis. Users can manually move processes between stages using drag-and-drop interactions.
+
+**Why this priority**: P1 because this enables effective case workflow management and provides visual organization of case status. Without kanban stage management, users cannot efficiently track and organize multiple cases through their lifecycle.
+
+**Independent Test**: Can be fully tested by verifying that: (1) processes appear in the kanban view, (2) users can select initial stage during registration, (3) AI assigns appropriate stages post-analysis, (4) users can drag and drop processes between stages, (5) stage changes persist in the database.
+
+**Acceptance Scenarios**:
+
+1. **Given** a user navigates to Juridico > Pipelines > Contencioso Cível, **When** the view loads, **Then** processes are displayed in a Kanban board organized by workflow stages
+2. **Given** a user is creating a new legal process, **When** during registration they reach the stage selection step, **Then** an input/dropdown displays all available kanban stages for them to select the initial stage (default: "Pendentes")
+3. **Given** a user has selected an initial stage and confirmed process registration, **When** the process is created, **Then** it appears in the selected kanban stage
+4. **Given** a legal process has completed AI analysis, **When** extraction identifies relevant case status indicators, **Then** the system automatically assigns the process to the appropriate kanban stage based on predefined decision criteria
+5. **Given** a process is in any kanban stage, **When** a user clicks and drags the process card, **Then** they can move it to a different stage and the system updates the process status immediately
+6. **Given** a user manually moves a process to a new stage, **When** the drag-and-drop operation completes, **Then** the new stage is persisted to the database and visible to the user
+
+---
+
+## Kanban Stages & AI Assignment Logic
+
+The following stages comprise the legal process workflow in the Contencioso Cível kanban:
+
+| Stage | Description | AI Auto-Assignment Criteria |
+|-------|-------------|---------------------------|
+| **Pendentes** | Process registered but not yet accepted or no clear progression indicators | Default initial stage; no specific indicators present |
+| **Aceites** | Parties have confirmed or accepted the expert proceedings | Document contains explicit acceptance/confirmation from parties |
+| **Perícia Agendada** | Expert examination has been scheduled with a defined date | Document specifies expertise appointment date and parties confirmed attendance |
+| **Periciado Não Compareceu** | Expert or defendant failed to appear at scheduled examination | Document records absence/no-show at scheduled expertise examination |
+| **Revisando Laudo/Impugnação** | Expert report (laudo) or expert opinion is under review, or parties have filed objections | Document shows expert report submission or objection/challenge filing |
+| **Aguardando Manifestações** | Process is awaiting responses or statements from the parties | Document indicates pending party submissions or judicial request for manifestations |
+| **Aguardando Pagamento** | Process payment is pending (expert fees, court costs, honorários, etc.) | Document references unpaid fees, pending payment requirement, or cost allocation |
+| **Finalizado** | Case has concluded with judgment, settlement, or official closure | Document contains final judgment, court decision, settlement agreement, or case closure notice |
+| **Não Realizado** | Expert proceedings were cancelled or did not occur | Document records cancellation, expert refusal, or proceeding termination |
+
+**AI Assignment Decision Tree**: When AI analysis completes, it evaluates the latest identified case event or status indicator. The system scans the document in reverse chronological order to identify the most recent status update and assigns the stage accordingly. If multiple criteria are present, the system prioritizes the most recent temporal indicator.
+
+---
+
 ### Edge Cases
 
 - What happens when a PDF is corrupted or illegible during AI extraction?
@@ -167,16 +206,25 @@ Based on the damages claimed and case circumstances, the AI system suggests rele
 - **FR-016**: System MUST enforce RLS policies at the database level to ensure users cannot bypass UI restrictions and view other users' processes
 - **FR-017**: System MUST persist all user-corrected extraction data to maintain data integrity and provide audit trail of corrections made
 - **FR-018**: System MUST maintain an audit log of all data modifications and corrections for security compliance
+- **FR-019**: System MUST display legal processes in a Kanban board view within Juridico > Pipelines > Contencioso Cível, organized by workflow stages
+- **FR-020**: System MUST provide a stage selection input during process registration, allowing users to select the initial kanban stage (defaulting to "Pendentes")
+- **FR-021**: System MUST support drag-and-drop functionality to move process cards between kanban stages, with immediate database persistence
+- **FR-022**: System MUST automatically assign processes to appropriate kanban stages post-AI-analysis based on identified case status indicators from document extraction
+- **FR-023**: System MUST implement AI stage assignment logic that evaluates document content and selects the most appropriate stage according to the decision criteria table (Aceites, Perícia Agendada, Periciado Não Compareceu, Revisando Laudo/Impugnação, Aguardando Manifestações, Aguardando Pagamento, Finalizado, Não Realizado, or Pendentes)
+- **FR-024**: System MUST scan judicial documents in reverse chronological order to identify the most recent case status indicator for stage assignment
+- **FR-025**: System MUST persist all kanban stage changes (both user-initiated drag-drop and AI-driven assignments) to the database with timestamp and audit trail
+- **FR-026**: System MUST display all nine kanban stages in the Contencioso Cível board: Pendentes, Aceites, Perícia Agendada, Periciado Não Compareceu, Revisando Laudo/Impugnação, Aguardando Manifestações, Aguardando Pagamento, Finalizado, Não Realizado
 
 ### Key Entities
 
-- **LegalProcess**: Represents a complete judicial case, containing process number, parties, type of action, registration date, professional role, and status
+- **LegalProcess**: Represents a complete judicial case, containing process number, parties, type of action, registration date, professional role, status, and current kanban stage
 - **JudicialDocument**: The uploaded PDF or document file associated with a process, with processing status and extraction metadata
 - **Party**: A legal entity (person or organization) involved in the case, with role type and representative information
 - **Quesito**: A technical question posed by a party to be addressed during expert analysis, with source reference
 - **ProcessEvent**: A major procedural event or decision in the case timeline, with date and description
 - **AttachedDocument**: Files referenced or attached within the judicial documents, with category and extracted metadata
 - **ExtractionMetadata**: System-generated metadata about extraction quality, confidence scores, and processing results
+- **KanbanStage**: Represents workflow stage in the Contencioso Cível kanban, with stage name, display order, and AI assignment criteria; tracks process movement history and audit trail
 
 ## Success Criteria *(mandatory)*
 
@@ -193,6 +241,10 @@ Based on the damages claimed and case circumstances, the AI system suggests rele
 - **SC-009**: Chronological case summary is generated with 98% accuracy in event ordering
 - **SC-010**: Document categorization accuracy reaches 90% (category assignment for attached documents)
 - **SC-011**: All unauthorized access attempts are blocked at the RLS database level and logged for security audit trails
+- **SC-012**: Users can create a process and assign initial kanban stage in under 30 seconds
+- **SC-013**: Drag-and-drop stage transitions complete with zero latency (update visible immediately to user)
+- **SC-014**: AI automatic stage assignment accuracy reaches 85% based on document analysis and decision criteria
+- **SC-015**: All kanban stage changes (manual and AI-driven) persist to database within 1 second and show complete audit trail
 
 ## Assumptions
 
@@ -209,3 +261,10 @@ Based on the damages claimed and case circumstances, the AI system suggests rele
 - Each user can only access processes they have personally uploaded
 - RLS policies prevent users from accessing other users' processes at the database level
 - User identification is available through authenticated Supabase user sessions
+- The Kanban board is implemented as a visual workflow management tool for Contencioso Cível cases
+- Kanban stages represent standard workflow steps in Brazilian legal expert proceedings (perícia)
+- Users are familiar with drag-and-drop interactions and Kanban board concepts
+- All nine kanban stages are always displayed in the board, with processes filtered by user ownership (RLS)
+- AI stage assignment logic can be updated post-launch to improve accuracy based on user feedback and additional document context
+- Kanban stage transitions should be instant (optimistic updates) without blocking UI
+- Database persistence happens asynchronously after optimistic UI update for improved user experience

@@ -5,13 +5,12 @@
 //   2. Fetch process row (must belong to caller, status must be 'pending')
 //   3. Transition status to 'processing'
 //   4. Download document bytes from Storage via signed URL
-//   5. Send to Gemini 1.5 Flash with structured JSON extraction prompt
+//   5. Upload document to OpenAI Files API, call Chat Completions for extraction
 //   6. Persist extracted fields and set status to 'completed' or 'needs_review'
 //   7. On any failure: set status to 'error' with message
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
 
 const ALLOWED_ORIGINS = (Deno.env.get('ALLOWED_ORIGINS') ?? '').split(',').map((o: string) => o.trim()).filter(Boolean);
 
@@ -32,6 +31,22 @@ function json(body: unknown, status: number, req: Request): Response {
     });
 }
 
+const EXAM_MODULE_NAMES = [
+    'Observações Iniciais e Contexto Pericial',
+    'Sinais Vitais e Medidas Antropométricas',
+    'Inspeção Geral e Postural',
+    'Inspeção e Exame do Aparelho Locomotor (Triagem Ortopédica)',
+    'Palpação de Estruturas Relevantes',
+    'Amplitude de Movimento (ADM) Articular',
+    'Força Muscular (Escala MRC 0-5)',
+    'Exame Neurológico',
+    'Testes Provocativos e Manobras Especiais de Coluna/Quadril',
+    'Testes de Joelho (se queixa em MMII)',
+    'Avaliação Funcional e Capacidade Laboral',
+    'Exame Cardiovascular (Triagem Pericial)',
+    'Exame Respiratório (Triagem Pericial)',
+];
+
 const EXTRACTION_PROMPT = `You are a Brazilian legal document analysis expert. Extract structured information from this legal document and return ONLY valid JSON matching this exact schema. Do not include any text outside the JSON object.
 
 {
@@ -49,13 +64,36 @@ const EXTRACTION_PROMPT = `You are a Brazilian legal document analysis expert. E
   "extraction_errors": ["list any fields that could not be reliably extracted"]
 }
 
-Important: All text fields must be in Brazilian Portuguese. Dates should use ISO 8601 format when possible.`;
+IMPORTANT INSTRUCTIONS:
+
+1. PARTIES: Always include the adjudicating court or tribunal as a party with role exactly "Órgão Julgador". For the plaintiff always use role "Autor" (or "Autora" for women). For the defendant always use role "Réu" (or "Ré" for women). Include representatives (lawyers) in the "representative" field.
+
+2. SUGGESTED EXAMINATIONS: Analyze the nature of the legal dispute and suggest physical/medical examination modules whenever the process context could benefit from a medical expert assessment — even if no perícia has been performed yet. Suggest exams for processes involving ANY of the following:
+   - Physical or psychological violence (domestic violence, assault, moral harassment, torture)
+   - Personal injury or bodily harm (accidents, work accidents, occupational diseases)
+   - Disability, sickness benefits (auxílio-doença, aposentadoria por invalidez, BPC/LOAS)
+   - Pain and suffering / indemnification for physical or mental harm
+   - Medical malpractice or healthcare disputes
+   - Sexual abuse or exploitation
+   - Child custody involving allegations of abuse or neglect
+   - Conditions affecting physical or mental health capacity to work
+   - Any claim where the physical or psychological condition of a person is relevant to the outcome
+
+   Do NOT suggest exams for purely procedural or unrelated disputes (e.g., habeas corpus for illegal detention without physical harm allegations, property disputes, contract disputes, tax matters, pure administrative appeals).
+
+   When suggesting, choose ONLY from this exact list of module names (use the exact name as written):
+${EXAM_MODULE_NAMES.map(n => `   - "${n}"`).join('\n')}
+   Choose the modules most relevant to the specific medical claims and injuries described in the process. Provide a specific justification based on the case facts for each module. If the process type genuinely does not involve any health/physical assessment, return an empty array.
+
+3. All text fields must be in Brazilian Portuguese. Dates should use ISO 8601 format when possible.`;
 
 serve(async (req: Request) => {
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: getCorsHeaders(req) });
     }
+
+    console.log(`[Debug] analyze_legal_process: Request received. Method: ${req.method}`);
 
     // ── T017: JWT validation ──────────────────────────────────────────────────
     const authHeader = req.headers.get('Authorization');
@@ -66,19 +104,14 @@ serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')!;
+    const openaiApiKey = Deno.env.get('CHAT-API-KEY')!;
 
-    // Caller client (respects RLS)
+    // Caller client (respects RLS — ownership enforced by user_id = auth.uid())
     const callerClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
     });
     // Admin client (bypasses RLS for status updates and storage)
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
-
-    const { data: { user }, error: userError } = await callerClient.auth.getUser(jwt);
-    if (userError || !user) {
-        return json({ error: 'Unauthorized' }, 401, req);
-    }
 
     // ── Parse body ────────────────────────────────────────────────────────────
     let process_id: string;
@@ -136,53 +169,85 @@ serve(async (req: Request) => {
 
     let documentBytes: Uint8Array;
     try {
+        console.log(`[Debug] Downloading document from: ${signedUrlData.signedUrl.substring(0, 50)}...`);
         const docResponse = await fetch(signedUrlData.signedUrl);
         if (!docResponse.ok) throw new Error(`HTTP ${docResponse.status}`);
         const buffer = await docResponse.arrayBuffer();
         documentBytes = new Uint8Array(buffer);
+        console.log(`[Debug] Download successful. Bytes: ${documentBytes.length}`);
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return await failProcess(`Failed to download document: ${message}`, 502);
     }
 
-    // ── T020: Gemini extraction ───────────────────────────────────────────────
-    // Convert bytes to base64
-    let base64Document: string;
+    // ── T020: OpenAI extraction (via raw fetch — no SDK dependency) ───────────
+    // Upload document to OpenAI Files API
+    let fileId = '';
     try {
-        // More efficient way to convert Uint8Array to base64 in Deno/Standard JS
-        const binary = String.fromCharCode(...documentBytes);
-        base64Document = btoa(binary);
+        console.log(`[Debug] Uploading document to OpenAI Files API...`);
+        const formData = new FormData();
+        const fileBlob = new Blob([documentBytes.buffer as ArrayBuffer], { type: process.document_mime_type });
+        formData.append('file', fileBlob, process.document_name);
+        formData.append('purpose', 'user_data');
+
+        const uploadRes = await fetch('https://api.openai.com/v1/files', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${openaiApiKey}` },
+            body: formData,
+        });
+        if (!uploadRes.ok) {
+            const err = await uploadRes.json().catch(() => ({}));
+            throw new Error(err?.error?.message ?? `HTTP ${uploadRes.status}`);
+        }
+        const uploadData = await uploadRes.json();
+        fileId = uploadData.id;
+        console.log(`[Debug] File uploaded. ID: ${fileId}`);
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        return await failProcess(`Failed to encode document: ${message}`, 500);
+        return await failProcess(`Failed to upload document to OpenAI: ${message}`, 500);
     }
 
     let extracted: Record<string, unknown>;
     try {
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
-        const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-flash',
-            generationConfig: {
-                responseMimeType: 'application/json',
-                temperature: 0.1, // Low temperature for factual extraction
+        console.log(`[Debug] Sending to OpenAI Chat Completions (gpt-4o-mini)...`);
+        const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${openaiApiKey}`,
+                'Content-Type': 'application/json',
             },
+            body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                messages: [{
+                    role: 'user',
+                    content: [
+                        { type: 'file', file: { file_id: fileId } },
+                        { type: 'text', text: EXTRACTION_PROMPT },
+                    ],
+                }],
+                response_format: { type: 'json_object' },
+                temperature: 0.1,
+            }),
         });
-
-        const result = await model.generateContent([
-            {
-                inlineData: {
-                    mimeType: process.document_mime_type,
-                    data: base64Document,
-                },
-            },
-            { text: EXTRACTION_PROMPT },
-        ]);
-
-        const responseText = result.response.text();
+        if (!chatRes.ok) {
+            const err = await chatRes.json().catch(() => ({}));
+            throw new Error(err?.error?.message ?? `HTTP ${chatRes.status}`);
+        }
+        const chatData = await chatRes.json();
+        const responseText = chatData.choices?.[0]?.message?.content ?? '';
+        console.log(`[Debug] OpenAI response received. Length: ${responseText.length}`);
         extracted = JSON.parse(responseText);
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        return await failProcess(`Gemini extraction failed: ${message}`, 502);
+        return await failProcess(`OpenAI extraction failed: ${message}`, 502);
+    } finally {
+        // Always clean up the uploaded file
+        if (fileId) {
+            await fetch(`https://api.openai.com/v1/files/${fileId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${openaiApiKey}` },
+            }).catch(() => {});
+        }
     }
 
     // ── T021–T025: Validate + persist results ─────────────────────────────────

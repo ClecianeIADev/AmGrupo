@@ -2,8 +2,8 @@
 // Slide-over panel for uploading a new legal process document.
 // Handles file selection, role selection, format validation, and analysis invocation.
 
-import { useState, useRef, useCallback } from 'react';
-import { X, CloudUpload, AlertCircle, Clock } from 'lucide-react';
+import { useState, useRef, useCallback, type DragEvent } from 'react';
+import { X, CloudUpload, AlertCircle, Clock, XCircle, RefreshCw } from 'lucide-react';
 import type { ProcessRole, LegalProcess } from '../../types/legalProcess';
 import { ProcessAnalysisProgress } from './ProcessAnalysisProgress';
 
@@ -32,20 +32,27 @@ export function ProcessUploadDrawer({
     const [role, setRole] = useState<ProcessRole>('Perito');
     const [dragging, setDragging] = useState(false);
     const [fileError, setFileError] = useState<string | null>(null);
+    const [analysisError, setAnalysisError] = useState<string | null>(null);
     const [phase, setPhase] = useState<'form' | 'analyzing'>('form');
     const [analyzingProcess, setAnalyzingProcess] = useState<LegalProcess | null>(null);
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    // Keeps track of the active subscription so we can clean up on manual close
+    const unsubscribeRef = useRef<(() => void) | null>(null);
 
     function reset() {
         setFile(null);
         setFileError(null);
+        setAnalysisError(null);
         setPhase('form');
         setAnalyzingProcess(null);
         setUploading(false);
     }
 
     function handleClose() {
+        // Cancel any active subscription/polling before closing
+        unsubscribeRef.current?.();
+        unsubscribeRef.current = null;
         reset();
         onClose();
     }
@@ -68,7 +75,7 @@ export function ProcessUploadDrawer({
         else setFile(null);
     }
 
-    const handleDrop = useCallback((e: React.DragEvent) => {
+    const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         setDragging(false);
         const dropped = e.dataTransfer.files[0];
@@ -78,6 +85,7 @@ export function ProcessUploadDrawer({
     async function handleConfirm() {
         if (!file) return;
         setUploading(true);
+        setAnalysisError(null);
 
         const newProcess = await onCreate(file, role);
         if (!newProcess) {
@@ -89,15 +97,27 @@ export function ProcessUploadDrawer({
         setPhase('analyzing');
         setUploading(false);
 
-        // Start analysis and subscribe to Realtime updates
-        await onAnalyze(newProcess.id);
-
+        // Subscribe FIRST — so the Realtime event is not missed while the edge function runs
         const unsubscribe = onSubscribe(newProcess.id, (updated) => {
             setAnalyzingProcess(updated);
             if (['completed', 'needs_review', 'error'].includes(updated.status)) {
+                unsubscribeRef.current = null;
                 unsubscribe();
                 handleClose();
             }
+        });
+        unsubscribeRef.current = unsubscribe;
+
+        // Fire-and-forget — Realtime/polling handles the completion signal.
+        // If the edge function returns an immediate error (e.g. auth, 409), show it here.
+        onAnalyze(newProcess.id).catch((err: unknown) => {
+            const msg = err instanceof Error
+                ? err.message
+                : (err as any)?.message ?? 'Erro ao iniciar análise. Verifique os logs da Edge Function.';
+            setAnalysisError(msg);
+            // Cancel the subscription — no point polling for a process that never started
+            unsubscribeRef.current?.();
+            unsubscribeRef.current = null;
         });
     }
 
@@ -127,7 +147,36 @@ export function ProcessUploadDrawer({
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6">
                     {phase === 'analyzing' && analyzingProcess ? (
-                        <ProcessAnalysisProgress processName={analyzingProcess.document_name} />
+                        analysisError ? (
+                            /* Edge function returned an immediate error */
+                            <div className="flex flex-col items-center gap-6 p-4 text-center">
+                                <div className="size-16 rounded-full bg-red-50 flex items-center justify-center">
+                                    <XCircle size={32} className="text-red-500" />
+                                </div>
+                                <div>
+                                    <p className="text-base font-bold text-slate-800">Falha ao iniciar análise</p>
+                                    <p className="text-sm text-slate-500 mt-1 max-w-xs">
+                                        O documento foi salvo, mas a análise não pôde ser iniciada.
+                                    </p>
+                                </div>
+                                <div className="w-full bg-red-50 border border-red-200 rounded-xl p-4 text-left">
+                                    <p className="text-xs font-semibold text-red-700 mb-1">Erro:</p>
+                                    <p className="text-xs text-red-600 font-mono break-all">{analysisError}</p>
+                                </div>
+                                <p className="text-xs text-slate-400">
+                                    O processo foi criado com status <span className="font-semibold">Pendente</span>. Use o botão "Tentar novamente" no card para reanalisar.
+                                </p>
+                                <button
+                                    onClick={handleClose}
+                                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+                                >
+                                    <RefreshCw size={15} />
+                                    Fechar e ver processos
+                                </button>
+                            </div>
+                        ) : (
+                            <ProcessAnalysisProgress processName={analyzingProcess.document_name} />
+                        )
                     ) : (
                         <div className="flex flex-col gap-6">
                             {/* Time warning — FR-003 */}
