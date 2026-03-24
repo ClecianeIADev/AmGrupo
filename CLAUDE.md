@@ -1,6 +1,6 @@
 # am-grupo-erp Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-17
+Auto-generated from all feature plans. Last updated: 2026-03-24
 
 ## Active Technologies
 
@@ -53,11 +53,47 @@ supabase functions serve <name>    # Local Edge Function dev
 ## Active Features
 
 - **001-legal-summaries** (`specs/001-legal-summaries/`): AI-powered legal process summaries — Gemini extraction, legal_processes table, ProcessDetailsModal with 5 tabs
+- **002-process-folders** (`specs/002-process-folders/`): Folder-based process organization — custom folders with colors, stage grouping (Pendente/Em Andamento/Finalizado), search, full RLS isolation. **Reuses existing UI screens** — focus on database integration and hooks.
+
+## Database Schema Updates
+
+### 002-process-folders (current)
+- New table: `process_folders` (id, user_id, name, color, created_at, updated_at)
+- Modified: `legal_processes` + column `folder_id` (UUID FK, ON DELETE NULLIFY)
+- Indexes: `idx_process_folders_user_id`, `idx_legal_processes_folder_id`, `idx_legal_processes_folder_stage`, `idx_process_folders_name`
+- RLS policies enforcing user isolation on `process_folders` table
+
+## Frontend Components & Hooks (002-process-folders)
+
+**UI Screens Already Exist** (no new components needed):
+- Folder grid — exists in Jurídico > Pipelines > Contencioso Cível > Pastas (existing layout)
+- Folder contents view with stage grouping — existing
+- Process search within folder — existing
+- Note: All visualization reuses existing infrastructure; focus is on database integration
+
+**Modified Components** (minimal changes):
+- `ProcessDetailsModal.tsx` — Add "Pasta" dropdown field for folder selection/change
+- `ProcessUploadDrawer.tsx` — Support `contextFolderId` prop, link processes to folder on creation
+
+**New Hooks** (in `src/hooks/`):
+- `useFolders()` — Folder CRUD + Realtime subscriptions
+- `useFolderContents(folderId)` — Fetch + group processes by stage
+- `useFolderSearch(folderId, searchTerm)` — Debounced search within folder
+
+**New Types** (in `src/types/folder.ts`):
+- `ProcessFolder` — Core folder entity
+- `FolderWithProcessCount` — Folder + process count
 
 ## Recent Changes
 
-- 2026-03-17: Added `legal_processes` table + RLS + Supabase Storage (`legal-documents` bucket)
-- 2026-03-17: Refactored OAuth provider_token to server-side only (Edge Function RPC)
+- 2026-03-24: Specification complete for 002-process-folders feature
+- 2026-03-24: Created database schema for `process_folders` table with RLS
+- 2026-03-24: **Scope adjustment** — 002-process-folders refocused to database integration only (~28-38 hours vs. original 53-66 hours)
+- 2026-03-24: UI screens for folder visualization already exist in layout — eliminated new component creation
+- 2026-03-24: Specification complete for 002-process-folders feature with reduced scope
+- 2026-03-24: Created database schema for `process_folders` table with RLS policies
+- 2026-03-24: Custom hooks planned (useFolders, useFolderContents, useFolderSearch)
+- 2026-03-24: Minimal component modifications required (ProcessDetailsModal, ProcessUploadDrawer
 - 2026-03-17: Installed DOMPurify for XSS protection on email HTML rendering
 - 2026-03-17: Auth session changed to sessionStorage (expires on browser close)
 
