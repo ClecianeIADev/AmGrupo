@@ -100,6 +100,7 @@ export interface LegalProcess {
     extraction_confidence: number | null;
     extraction_errors: string[];
     kanban_stage: KanbanStage;
+    folder_id: string | null;
     created_at: string;
     updated_at: string;
 }

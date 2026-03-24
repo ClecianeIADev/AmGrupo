@@ -22,10 +22,12 @@ interface ProcessUploadDrawerProps {
     onCreate: (file: File, role: ProcessRole) => Promise<LegalProcess | null>;
     onAnalyze: (processId: string) => Promise<void>;
     onSubscribe: (processId: string, onUpdate: (p: LegalProcess) => void) => () => void;
+    contextFolderId?: string | null;
+    onLinkToFolder?: (processId: string, folderId: string) => Promise<void>;
 }
 
 export function ProcessUploadDrawer({
-    isOpen, onClose, onCreate, onAnalyze, onSubscribe,
+    isOpen, onClose, onCreate, onAnalyze, onSubscribe, contextFolderId, onLinkToFolder,
 }: ProcessUploadDrawerProps) {
     const [file, setFile] = useState<File | null>(null);
     const [role, setRole] = useState<ProcessRole>('Perito');
@@ -90,6 +92,11 @@ export function ProcessUploadDrawer({
         if (!newProcess) {
             setUploading(false);
             return;
+        }
+
+        // If opened from a folder context, link the process to that folder
+        if (contextFolderId && onLinkToFolder) {
+            await onLinkToFolder(newProcess.id, contextFolderId).catch(() => {/* non-fatal */});
         }
 
         setAnalyzingProcess(newProcess);

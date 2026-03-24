@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import type { LegalProcess, ProcessDocument } from '../../types/legalProcess';
 import { supabase } from '../../lib/supabase';
+import { useFolders } from '../../hooks/useFolders';
+import { Folder } from 'lucide-react';
 
 interface ProcessDetailsModalProps {
     isOpen: boolean;
@@ -33,6 +35,7 @@ interface ProcessDetailsModalProps {
     process: LegalProcess | null;
     onUploadDocument?: (processId: string, file: File) => Promise<LegalProcess | null>;
     onDeleteDocument?: (processId: string, docId: string, storagePath: string) => Promise<LegalProcess | null>;
+    onFolderChange?: (processId: string, folderId: string | null) => Promise<void>;
 }
 
 type Tab = 'executive' | 'summary' | 'quesitos' | 'documents' | 'examinations';
@@ -1031,10 +1034,13 @@ export function ProcessDetailsModal({
     process,
     onUploadDocument,
     onDeleteDocument,
+    onFolderChange,
 }: ProcessDetailsModalProps) {
     const [activeTab, setActiveTab] = useState<Tab>('executive');
     const [downloadingDoc, setDownloadingDoc] = useState(false);
     const [localProcess, setLocalProcess] = useState<LegalProcess | null>(null);
+    const [savingFolder, setSavingFolder] = useState(false);
+    const { folders } = useFolders();
 
     useEffect(() => { if (process) setLocalProcess(process); }, [process]);
 
@@ -1101,6 +1107,32 @@ export function ProcessDetailsModal({
                                             {localProcess.parties.length} partes
                                             <ChevronDown size={12} />
                                         </span>
+                                    )}
+                                    {/* Pasta dropdown */}
+                                    {onFolderChange && (
+                                        <div className="flex items-center gap-1.5">
+                                            <Folder size={13} className="text-slate-400 shrink-0" />
+                                            <select
+                                                value={localProcess.folder_id ?? ''}
+                                                disabled={savingFolder}
+                                                onChange={async (e) => {
+                                                    const val = e.target.value || null;
+                                                    setSavingFolder(true);
+                                                    try {
+                                                        await onFolderChange(localProcess.id, val);
+                                                        setLocalProcess(prev => prev ? { ...prev, folder_id: val } : prev);
+                                                    } finally {
+                                                        setSavingFolder(false);
+                                                    }
+                                                }}
+                                                className="text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 cursor-pointer"
+                                            >
+                                                <option value="">Sem Pasta</option>
+                                                {folders.map(f => (
+                                                    <option key={f.id} value={f.id}>{f.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     )}
                                 </div>
                             </div>
