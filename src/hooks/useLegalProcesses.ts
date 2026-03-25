@@ -50,6 +50,21 @@ export function useLegalProcesses(): UseLegalProcessesReturn {
 
     useEffect(() => {
         fetchProcesses();
+
+        // Realtime: silently patch any updated process in the list (e.g. folder_id changes)
+        const channel = supabase
+            .channel('legal_processes_list_realtime')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'legal_processes' },
+                (payload) => {
+                    const updated = payload.new as LegalProcess;
+                    setProcesses(prev => prev.map(p => p.id === updated.id ? updated : p));
+                }
+            )
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
     }, [fetchProcesses]);
 
     const createProcess = useCallback(

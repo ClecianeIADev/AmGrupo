@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { useState, type DragEvent, type MouseEvent } from 'react';
 import {
   Plus,
   FolderPlus,
@@ -6,8 +6,6 @@ import {
   List,
   Home,
   FolderOpen,
-  MoreVertical,
-  MoreHorizontal,
   Folder,
   ChevronRight,
   X,
@@ -18,6 +16,9 @@ import {
   Check,
   ChevronDown as ChevronDownIcon,
   GripVertical,
+  Trash2,
+  Pencil,
+  MoreHorizontal,
 } from 'lucide-react';
 import { ProcessDetailsModal } from '../components/juridico/ProcessDetailsModal';
 import { ProcessUploadDrawer } from '../components/juridico/ProcessUploadDrawer';
@@ -25,6 +26,7 @@ import { ProcessSummaryCard } from '../components/juridico/ProcessSummaryCard';
 import { useLegalProcesses } from '../hooks/useLegalProcesses';
 import { useFolders } from '../hooks/useFolders';
 import type { LegalProcess, KanbanStage } from '../types/legalProcess';
+import type { FolderWithProcessCount } from '../types/folder';
 
 const KANBAN_STAGES: { id: KanbanStage; color: string }[] = [
   { id: 'Pendentes',                    color: 'border-slate-400' },
@@ -38,6 +40,19 @@ const KANBAN_STAGES: { id: KanbanStage; color: string }[] = [
   { id: 'Não Realizado',               color: 'border-rose-500' },
 ];
 
+const FOLDER_COLORS = [
+  { id: 'blue',   hex: '#3b82f6' },
+  { id: 'green',  hex: '#22c55e' },
+  { id: 'yellow', hex: '#eab308' },
+  { id: 'orange', hex: '#f97316' },
+  { id: 'red',    hex: '#ef4444' },
+  { id: 'purple', hex: '#a855f7' },
+  { id: 'pink',   hex: '#ec4899' },
+  { id: 'slate',  hex: '#64748b' },
+];
+
+const GROUP_VISIBLE_COUNT = 5;
+
 export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (view: string) => void }) {
   const [viewMode, setViewMode] = useState<'kanban' | 'grid' | 'grouped'>('kanban');
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -49,6 +64,14 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
   const [dragOverStage, setDragOverStage] = useState<KanbanStage | null>(null);
   const [folderGridSearch, setFolderGridSearch] = useState('');
 
+  // Edit folder state
+  const [editingFolder, setEditingFolder] = useState<FolderWithProcessCount | null>(null);
+  const [editFolderName, setEditFolderName] = useState('');
+  const [editFolderColor, setEditFolderColor] = useState('#3b82f6');
+
+  // "Ver mais" expanded groups
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
   const {
     processes, loading, createProcess, deleteProcess,
     invokeAnalysis, retryAnalysis, subscribeToProcess,
@@ -56,21 +79,10 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
   } = useLegalProcesses();
 
   const {
-    folders, loadingFolders, createFolder, deleteFolder,
+    folders, loadingFolders, createFolder, updateFolder, deleteFolder,
     filteredGrouped, loadingContents, fetchFolderContents,
     folderSearch, setFolderSearch, linkProcessToFolder,
   } = useFolders();
-
-  const folderColors = [
-    { id: 'blue',   hex: '#3b82f6' },
-    { id: 'green',  hex: '#22c55e' },
-    { id: 'yellow', hex: '#eab308' },
-    { id: 'orange', hex: '#f97316' },
-    { id: 'red',    hex: '#ef4444' },
-    { id: 'purple', hex: '#a855f7' },
-    { id: 'pink',   hex: '#ec4899' },
-    { id: 'slate',  hex: '#64748b' },
-  ];
 
   function handleDragStart(e: DragEvent<HTMLDivElement>, processId: string) {
     e.dataTransfer.setData('processId', processId);
@@ -82,6 +94,28 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
     setDragOverStage(null);
     const processId = e.dataTransfer.getData('processId');
     if (processId) updateProcessStage(processId, stage);
+  }
+
+  function openEditFolder(e: MouseEvent<HTMLElement>, folder: FolderWithProcessCount) {
+    e.stopPropagation();
+    setEditingFolder(folder);
+    setEditFolderName(folder.name);
+    setEditFolderColor(folder.color);
+  }
+
+  async function handleSaveEditFolder() {
+    if (!editingFolder || !editFolderName.trim()) return;
+    await updateFolder(editingFolder.id, { name: editFolderName.trim(), color: editFolderColor });
+    setEditingFolder(null);
+  }
+
+  function toggleExpandGroup(key: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   return (
@@ -130,7 +164,6 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
         {/* ── KANBAN BOARD ── */}
         {viewMode === 'kanban' && (
           loading ? (
-            /* Skeleton */
             <div className="flex gap-4 h-full overflow-x-auto pb-4">
               {KANBAN_STAGES.map(stage => (
                 <div key={stage.id} className="flex flex-col w-72 flex-shrink-0">
@@ -160,7 +193,6 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                     onDragLeave={() => setDragOverStage(null)}
                     onDrop={(e) => handleDrop(e, stage.id)}
                   >
-                    {/* Column header */}
                     <div className="flex items-center justify-between mb-3 px-1">
                       <div className="flex items-center gap-2">
                         <h3 className="font-bold text-slate-700 text-xs uppercase tracking-wide">{stage.id}</h3>
@@ -173,7 +205,6 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                       </button>
                     </div>
 
-                    {/* Column body */}
                     <div
                       className={`flex-1 overflow-y-auto rounded-xl p-2 flex flex-col gap-3 border-t-4 transition-colors ${stage.color} ${
                         isOver ? 'bg-slate-200' : 'bg-slate-100'
@@ -189,7 +220,6 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                           onDragStart={(e) => handleDragStart(e, process.id)}
                           className="cursor-grab active:cursor-grabbing group/drag"
                         >
-                          {/* Drag handle row */}
                           <div className="flex items-center justify-end px-1 pb-0.5 opacity-0 group-hover/drag:opacity-100 transition-opacity">
                             <GripVertical size={14} className="text-slate-400" />
                           </div>
@@ -253,7 +283,7 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                           setViewMode('grouped');
                           fetchFolderContents(folder.id);
                         }}
-                        className="border border-slate-200 rounded-lg p-4 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group bg-white"
+                        className="border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:shadow-md transition-all cursor-pointer group bg-white"
                       >
                         <div className="flex items-center gap-3 overflow-hidden">
                           <Folder style={{ color: folder.color }} size={24} />
@@ -262,12 +292,23 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                             <p className="text-xs text-slate-400">{folder.process_count} processo{folder.process_count !== 1 ? 's' : ''}</p>
                           </div>
                         </div>
-                        <button
-                          onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }}
-                          className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity p-1 rounded-full hover:bg-red-50"
-                        >
-                          <MoreVertical size={18} />
-                        </button>
+                        {/* Action buttons — visible on hover */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => openEditFolder(e, folder)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-primary hover:bg-blue-50 transition-colors"
+                            title="Editar pasta"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); deleteFolder(folder.id); }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                            title="Excluir pasta"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </div>
                     ))
                   }
@@ -340,62 +381,79 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                     ] as const
                   ).map(({ key, color, label }) => {
                     const procs = filteredGrouped[key];
+                    const isExpanded = expandedGroups.has(key);
+                    const hasMore = procs.length > GROUP_VISIBLE_COUNT;
+                    const visibleProcs = isExpanded ? procs : procs.slice(0, GROUP_VISIBLE_COUNT);
+
                     return (
-                      <details key={key} className="group bg-slate-100/50 rounded-xl overflow-hidden border border-slate-200 transition-all" open>
-                        <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-200/50 transition-colors list-none">
+                      <details key={key} className="group bg-slate-100/50 rounded-xl border border-slate-200 transition-all" open>
+                        <summary className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-200/50 transition-colors list-none rounded-xl">
                           <div className="flex items-center gap-3">
                             <ChevronDownIcon className="text-slate-400 transition-transform group-open:rotate-180" size={20} />
                             <div className={`size-2 rounded-full ${color}`} />
                             <h3 className="font-bold text-slate-700">{label}</h3>
                             <span className="bg-white text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold border border-slate-200">{procs.length}</span>
                           </div>
-                          <button className="text-slate-400 hover:text-slate-600"><MoreHorizontal size={20} /></button>
                         </summary>
-                        <div className="p-4 pt-0 flex flex-col gap-3">
+                        <div className="px-4 pb-4 pt-2 flex flex-col gap-3">
                           {procs.length === 0 ? (
                             <p className="text-xs text-slate-400 text-center py-4">Sem processos</p>
-                          ) : procs.map(p => (
-                            <div
-                              key={p.id}
-                              onClick={() => setSelectedProcess(p)}
-                              className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer"
-                            >
-                              <div className="flex items-start gap-4 flex-1 min-w-0">
-                                <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
-                                  <Scale className="text-purple-500" size={20} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <h3 className="text-sm font-bold text-slate-900 truncate">
-                                      {p.process_number ?? p.process_name ?? p.document_name}
-                                    </h3>
-                                    <span className="text-[10px] text-slate-400 font-medium px-2 py-0.5 border border-slate-200 rounded-full shrink-0">{p.professional_role}</span>
+                          ) : (
+                            <>
+                              {visibleProcs.map(p => (
+                                <div
+                                  key={p.id}
+                                  onClick={() => setSelectedProcess(p)}
+                                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer"
+                                >
+                                  <div className="flex items-start gap-4 flex-1 min-w-0">
+                                    <div className="size-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0">
+                                      <Scale className="text-purple-500" size={20} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <h3 className="text-sm font-bold text-slate-900 truncate">
+                                          {p.process_number ?? p.process_name ?? p.document_name}
+                                        </h3>
+                                        <span className="text-[10px] text-slate-400 font-medium px-2 py-0.5 border border-slate-200 rounded-full shrink-0">{p.professional_role}</span>
+                                      </div>
+                                      {p.process_name && p.process_number && (
+                                        <p className="text-xs text-slate-500 truncate">{p.process_name}</p>
+                                      )}
+                                    </div>
                                   </div>
-                                  {p.process_name && p.process_number && (
-                                    <p className="text-xs text-slate-500 truncate">{p.process_name}</p>
-                                  )}
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    {p.status === 'completed' && (
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-green-100 text-green-700">
+                                        <CheckCircle2 size={12} />Concluído
+                                      </span>
+                                    )}
+                                    {p.status === 'processing' && (
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
+                                        <RefreshCw size={12} />Em análise
+                                      </span>
+                                    )}
+                                    {p.status === 'pending' && (
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700">
+                                        <Clock size={12} />Aguardando
+                                      </span>
+                                    )}
+                                    <ChevronRight size={20} className="text-slate-400" />
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="flex items-center gap-3 shrink-0">
-                                {p.status === 'completed' && (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-green-100 text-green-700">
-                                    <CheckCircle2 size={12} />Concluído
-                                  </span>
-                                )}
-                                {p.status === 'processing' && (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
-                                    <RefreshCw size={12} />Em análise
-                                  </span>
-                                )}
-                                {p.status === 'pending' && (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700">
-                                    <Clock size={12} />Aguardando
-                                  </span>
-                                )}
-                                <ChevronRight size={20} className="text-slate-400" />
-                              </div>
-                            </div>
-                          ))}
+                              ))}
+                              {hasMore && (
+                                <div className="flex justify-end pt-1">
+                                  <button
+                                    onClick={() => toggleExpandGroup(key)}
+                                    className="text-xs font-semibold text-primary hover:text-blue-700 transition-colors"
+                                  >
+                                    {isExpanded ? 'Ver menos' : `Ver mais (${procs.length - GROUP_VISIBLE_COUNT})`}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       </details>
                     );
@@ -407,7 +465,7 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
         })()}
       </div>
 
-      {/* New Folder Modal */}
+      {/* ── New Folder Modal ── */}
       {isNewFolderModalOpen && (
         <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={() => { setIsNewFolderModalOpen(false); setNewFolderName(''); }} />
@@ -446,12 +504,8 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
                 <div className="space-y-3">
                   <label className="block text-sm font-semibold text-slate-900">Cor da pasta</label>
                   <div className="grid grid-cols-4 gap-4">
-                    {folderColors.map((color) => (
-                      <div
-                        key={color.id}
-                        onClick={() => setSelectedColor(color.hex)}
-                        className="relative cursor-pointer"
-                      >
+                    {FOLDER_COLORS.map((color) => (
+                      <div key={color.id} onClick={() => setSelectedColor(color.hex)} className="relative cursor-pointer">
                         <div
                           className={`w-full aspect-square rounded-xl border-2 flex items-center justify-center transition-all ${selectedColor === color.hex ? 'border-slate-400' : 'border-transparent hover:border-slate-200'}`}
                           style={{ backgroundColor: color.hex + '20' }}
@@ -495,6 +549,84 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
         </div>
       )}
 
+      {/* ── Edit Folder Modal ── */}
+      {editingFolder && (
+        <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={() => setEditingFolder(null)} />
+          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-primary font-bold">
+                <Pencil size={20} />
+                <span>Editar Pasta</span>
+              </div>
+              <button onClick={() => setEditingFolder(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
+              <div className="w-32 h-32 rounded-full flex items-center justify-center mb-8" style={{ backgroundColor: editFolderColor + '20' }}>
+                <Folder style={{ color: editFolderColor }} size={64} fill={editFolderColor} />
+              </div>
+
+              <div className="w-full space-y-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-900">Nome da pasta</label>
+                  <input
+                    value={editFolderName}
+                    onChange={e => setEditFolderName(e.target.value.slice(0, 30))}
+                    maxLength={30}
+                    className="block w-full px-4 py-3 rounded-lg border border-primary ring-1 ring-primary focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-white text-slate-900 transition-shadow"
+                    placeholder="Nome da pasta"
+                    type="text"
+                  />
+                  <div className="flex justify-end">
+                    <span className="text-xs text-slate-400">{editFolderName.length}/30</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-slate-900">Cor da pasta</label>
+                  <div className="grid grid-cols-4 gap-4">
+                    {FOLDER_COLORS.map((color) => (
+                      <div key={color.id} onClick={() => setEditFolderColor(color.hex)} className="relative cursor-pointer">
+                        <div
+                          className={`w-full aspect-square rounded-xl border-2 flex items-center justify-center transition-all ${editFolderColor === color.hex ? 'border-slate-400' : 'border-transparent hover:border-slate-200'}`}
+                          style={{ backgroundColor: color.hex + '20' }}
+                        >
+                          <Folder style={{ color: color.hex }} size={32} fill={editFolderColor === color.hex ? color.hex : 'none'} />
+                          {editFolderColor === color.hex && (
+                            <div className="absolute -top-2 -right-2 bg-primary text-white rounded-full p-0.5 shadow-sm">
+                              <Check size={14} strokeWidth={3} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-100 flex justify-end gap-3">
+              <button
+                onClick={() => setEditingFolder(null)}
+                className="px-5 py-2.5 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 border border-slate-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={!editFolderName.trim()}
+                onClick={handleSaveEditFolder}
+                className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-primary hover:bg-blue-600 text-white shadow-sm shadow-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ProcessUploadDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
@@ -511,6 +643,7 @@ export function JuridicoProcessos({ onNavigate: _onNavigate }: { onNavigate: (vi
         onUploadDocument={uploadProcessDocument}
         onDeleteDocument={deleteProcessDocument}
         onFolderChange={linkProcessToFolder}
+        folders={folders}
       />
     </main>
   );

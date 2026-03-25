@@ -25,8 +25,8 @@ import {
     ExternalLink,
 } from 'lucide-react';
 import type { LegalProcess, ProcessDocument } from '../../types/legalProcess';
+import type { FolderWithProcessCount } from '../../types/folder';
 import { supabase } from '../../lib/supabase';
-import { useFolders } from '../../hooks/useFolders';
 import { Folder } from 'lucide-react';
 
 interface ProcessDetailsModalProps {
@@ -36,6 +36,7 @@ interface ProcessDetailsModalProps {
     onUploadDocument?: (processId: string, file: File) => Promise<LegalProcess | null>;
     onDeleteDocument?: (processId: string, docId: string, storagePath: string) => Promise<LegalProcess | null>;
     onFolderChange?: (processId: string, folderId: string | null) => Promise<void>;
+    folders?: FolderWithProcessCount[];
 }
 
 type Tab = 'executive' | 'summary' | 'quesitos' | 'documents' | 'examinations';
@@ -1035,12 +1036,12 @@ export function ProcessDetailsModal({
     onUploadDocument,
     onDeleteDocument,
     onFolderChange,
+    folders = [],
 }: ProcessDetailsModalProps) {
     const [activeTab, setActiveTab] = useState<Tab>('executive');
     const [downloadingDoc, setDownloadingDoc] = useState(false);
     const [localProcess, setLocalProcess] = useState<LegalProcess | null>(null);
     const [savingFolder, setSavingFolder] = useState(false);
-    const { folders } = useFolders();
 
     useEffect(() => { if (process) setLocalProcess(process); }, [process]);
 

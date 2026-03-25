@@ -1,6 +1,6 @@
 // useFolders hook — CRUD + folder contents + search (002-process-folders)
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { FolderWithProcessCount } from '../types/folder';
 import type { LegalProcess } from '../types/legalProcess';
@@ -63,9 +63,13 @@ export function useFolders(): UseFoldersReturn {
 
     const [folderSearch, setFolderSearch] = useState('');
 
+    // Tracks which folder is currently open so Realtime can refresh it
+    const currentFolderIdRef = useRef<string | null>(null);
+
     // ── Fetch folders with process counts ──────────────────────────────────────
-    const fetchFolders = useCallback(async () => {
-        setLoadingFolders(true);
+    // silent=true skips the loading skeleton (for background refreshes)
+    const fetchFolders = useCallback(async (silent = false) => {
+        if (!silent) setLoadingFolders(true);
         setFolderError(null);
         try {
             const { data, error } = await supabase
@@ -75,38 +79,74 @@ export function useFolders(): UseFoldersReturn {
 
             if (error) throw error;
 
-            const mapped: FolderWithProcessCount[] = (data ?? []).map((row: any) => ({
-                id: row.id,
-                user_id: row.user_id,
-                name: row.name,
-                color: row.color,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
+            const mapped: FolderWithProcessCount[] = (data ?? []).map((row: Record<string, unknown>) => ({
+                id: row.id as string,
+                user_id: row.user_id as string,
+                name: row.name as string,
+                color: row.color as string,
+                created_at: row.created_at as string,
+                updated_at: row.updated_at as string,
                 process_count: Array.isArray(row.legal_processes)
-                    ? row.legal_processes[0]?.count ?? 0
+                    ? (row.legal_processes[0] as { count?: number })?.count ?? 0
                     : 0,
             }));
             setFolders(mapped);
-        } catch (err: any) {
-            setFolderError(err.message ?? 'Erro ao carregar pastas.');
+        } catch (err: unknown) {
+            setFolderError((err as Error).message ?? 'Erro ao carregar pastas.');
         } finally {
             setLoadingFolders(false);
+        }
+    }, []);
+
+    // ── Fetch folder contents ──────────────────────────────────────────────────
+    const fetchFolderContents = useCallback(async (folderId: string) => {
+        currentFolderIdRef.current = folderId;
+        setLoadingContents(true);
+        try {
+            const { data, error } = await supabase
+                .from('legal_processes')
+                .select('*')
+                .eq('folder_id', folderId)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            const procs = (data as LegalProcess[]) ?? [];
+            setFolderProcesses(procs);
+            setGroupedProcesses(groupByStage(procs));
+        } catch (err: unknown) {
+            setFolderError((err as Error).message ?? 'Erro ao carregar processos da pasta.');
+        } finally {
+            setLoadingContents(false);
         }
     }, []);
 
     useEffect(() => {
         fetchFolders();
 
-        // Realtime: refresh folder list on any folder CRUD
-        const channel = supabase
+        // Realtime: refresh folder list on any folder CRUD (silent — no skeleton)
+        const foldersChannel = supabase
             .channel('process_folders_realtime')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'process_folders' }, () => {
-                fetchFolders();
+                fetchFolders(true);
             })
             .subscribe();
 
-        return () => { supabase.removeChannel(channel); };
-    }, [fetchFolders]);
+        // Realtime: refresh folder contents + counts on any process change (silent)
+        const processesChannel = supabase
+            .channel('legal_processes_folder_realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'legal_processes' }, () => {
+                fetchFolders(true);
+                if (currentFolderIdRef.current) {
+                    fetchFolderContents(currentFolderIdRef.current);
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(foldersChannel);
+            supabase.removeChannel(processesChannel);
+        };
+    }, [fetchFolders, fetchFolderContents]);
 
     // ── Create folder ──────────────────────────────────────────────────────────
     const createFolder = useCallback(async (name: string, color: string): Promise<FolderWithProcessCount | null> => {
@@ -122,11 +162,11 @@ export function useFolders(): UseFoldersReturn {
                 .single();
 
             if (error) throw error;
-            const newFolder: FolderWithProcessCount = { ...(data as any), process_count: 0 };
+            const newFolder: FolderWithProcessCount = { ...(data as FolderWithProcessCount), process_count: 0 };
             setFolders(prev => [newFolder, ...prev]);
             return newFolder;
-        } catch (err: any) {
-            setFolderError(err.message ?? 'Erro ao criar pasta.');
+        } catch (err: unknown) {
+            setFolderError((err as Error).message ?? 'Erro ao criar pasta.');
             return null;
         }
     }, []);
@@ -141,8 +181,8 @@ export function useFolders(): UseFoldersReturn {
                 .eq('id', id);
             if (error) throw error;
             setFolders(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
-        } catch (err: any) {
-            setFolderError(err.message ?? 'Erro ao atualizar pasta.');
+        } catch (err: unknown) {
+            setFolderError((err as Error).message ?? 'Erro ao atualizar pasta.');
         }
     }, []);
 
@@ -156,29 +196,11 @@ export function useFolders(): UseFoldersReturn {
                 .eq('id', id);
             if (error) throw error;
             setFolders(prev => prev.filter(f => f.id !== id));
-        } catch (err: any) {
-            setFolderError(err.message ?? 'Erro ao excluir pasta.');
-        }
-    }, []);
-
-    // ── Fetch folder contents ──────────────────────────────────────────────────
-    const fetchFolderContents = useCallback(async (folderId: string) => {
-        setLoadingContents(true);
-        try {
-            const { data, error } = await supabase
-                .from('legal_processes')
-                .select('*')
-                .eq('folder_id', folderId)
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-            const procs = (data as LegalProcess[]) ?? [];
-            setFolderProcesses(procs);
-            setGroupedProcesses(groupByStage(procs));
-        } catch (err: any) {
-            setFolderError(err.message ?? 'Erro ao carregar processos da pasta.');
-        } finally {
-            setLoadingContents(false);
+            if (currentFolderIdRef.current === id) {
+                currentFolderIdRef.current = null;
+            }
+        } catch (err: unknown) {
+            setFolderError((err as Error).message ?? 'Erro ao excluir pasta.');
         }
     }, []);
 
@@ -189,9 +211,19 @@ export function useFolders(): UseFoldersReturn {
             .update({ folder_id: folderId })
             .eq('id', processId);
         if (error) throw error;
-        // Refresh process count
-        fetchFolders();
-    }, [fetchFolders]);
+        // Refresh folder counts (silent — no skeleton)
+        fetchFolders(true);
+        // Always refresh the target folder's contents so the process appears
+        // immediately whether or not the user is currently in that folder view
+        if (folderId) {
+            fetchFolderContents(folderId);
+        }
+        // Also refresh the previously-viewed folder if it differs (process moved out)
+        const prev = currentFolderIdRef.current;
+        if (prev && prev !== folderId) {
+            fetchFolderContents(prev);
+        }
+    }, [fetchFolders, fetchFolderContents]);
 
     // ── Client-side search ─────────────────────────────────────────────────────
     const filteredProcesses = folderSearch.trim()
