@@ -20,6 +20,7 @@ import { JuridicoProcessos } from './views/JuridicoProcessos';
 import { RHDashboard } from './views/RHDashboard';
 import { RHProfissionais } from './views/RHProfissionais';
 import { RHPerfil } from './views/RHPerfil';
+import { RHSetores } from './views/RHSetores';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -114,6 +115,7 @@ export default function App() {
         {currentView === 'rh-dashboard' && <RHDashboard />}
         {currentView === 'rh-profissionais' && <RHProfissionais onNavigate={setCurrentView} />}
         {currentView === 'rh-perfil' && <RHPerfil />}
+        {currentView === 'rh-setores' && <RHSetores onNavigate={setCurrentView} />}
       </div>
     </div>
   );

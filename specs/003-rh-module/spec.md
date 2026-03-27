@@ -4,7 +4,7 @@
 **Created**: 2026-03-25
 **Status**: Draft
 **Input**: Módulo de gestão de funcionários da empresa com dashboard de métricas, listagem e administração de profissionais
-**Scope**: Parte 1 — Dashboard de Gestão | Parte 2 — Gestão de Profissionais
+**Scope**: Parte 1 — Dashboard de Gestão | Parte 2 — Gestão de Profissionais | Parte 3 — Sistema de Setores
 
 ---
 
@@ -495,3 +495,168 @@ Plano de Desenvolvimento Individual do profissional.
 - PDI é um campo de texto simples (não editor rich text)
 - Gestor imediato é um select que lista apenas profissionais ativos do mesmo usuário (exibindo foto + nome)
 - Navegação ao perfil do profissional é por click direto no card (sem botão "Ver Perfil" separado)
+
+---
+
+## Parte 3 — Sistema de Setores (Departamentos)
+
+### Contexto
+
+A Parte 3 adiciona gestão completa de setores (departamentos) ao módulo RH. Os setores permitem que o usuário organize seus profissionais em unidades organizacionais. A tela de Profissionais recebe navegação por sub-abas ("Profissionais" e "Setores"), e uma nova tela de listagem de setores é criada.
+
+---
+
+### User Story 15 — Visualizar Lista de Setores (Priority: P1)
+
+O usuário acessa RH → Profissionais e clica na sub-aba "Setores". O sistema exibe uma tabela paginada com todos os setores cadastrados por ele: nome do setor (com ícone), número de colaboradores vinculados, gestor responsável (foto + nome), toggle de status e ações de editar/excluir.
+
+**Why this priority**: Base de todo o fluxo de setores. Sem ela nenhuma outra funcionalidade tem contexto visual. Entrega valor imediato ao gestor que precisa auditar a estrutura departamental.
+
+**Independent Test**: Navegar até RH → Profissionais → aba "Setores" com ao menos um setor cadastrado e verificar que a tabela exibe todas as colunas corretamente.
+
+**Acceptance Scenarios**:
+
+1. **Given** o usuário está em RH → Profissionais, **When** ele clica na sub-aba "Setores", **Then** a tela de setores exibe tabela com colunas: Nome do Setor, Colaboradores, Gestor Responsável, Status e Ações.
+2. **Given** existem 12 setores cadastrados, **When** o usuário carrega a tela, **Then** 5 setores são exibidos e a paginação mostra "Mostrando 5 de 12 setores cadastrados" com botões 1, 2, 3.
+3. **Given** o usuário está na tela de Setores, **When** ele navega para a página 2, **Then** os próximos 5 setores são exibidos.
+4. **Given** não há setores cadastrados, **When** o usuário acessa a aba "Setores", **Then** um estado vazio é exibido com orientação para criar o primeiro setor.
+
+---
+
+### User Story 16 — Criar Novo Setor (Priority: P1)
+
+O usuário clica em "+ Adicionar Setor" e preenche o formulário no drawer lateral: nome do setor, status (ativo por padrão via toggle) e gestor responsável (autocomplete dos profissionais existentes). Ao salvar, o setor aparece imediatamente na lista.
+
+**Why this priority**: Funcionalidade central — sem criação de setores, toda a feature está bloqueada.
+
+**Independent Test**: Criar um setor, salvar e verificar que aparece na tabela com as informações corretas.
+
+**Acceptance Scenarios**:
+
+1. **Given** o usuário está na tela de Setores, **When** clica em "+ Adicionar Setor", **Then** um drawer lateral abre com campos: Nome (obrigatório), Status (toggle, ativo por padrão), Gestor Responsável (autocomplete).
+2. **Given** o drawer está aberto com dados válidos, **When** o usuário clica em "Salvar", **Then** o setor é persistido, o drawer fecha e o novo setor aparece na lista.
+3. **Given** o campo Nome está vazio, **When** o usuário clica em "Salvar", **Then** mensagem de validação é exibida e o setor não é criado.
+4. **Given** o usuário digita no campo "Gestor Responsável", **When** digita parte do nome, **Then** apenas profissionais cadastrados pelo mesmo usuário que correspondem são sugeridos.
+
+---
+
+### User Story 17 — Editar Setor (Priority: P2)
+
+O usuário clica no ícone de lápis de um setor. O drawer lateral de edição abre com os dados atuais pré-preenchidos. O usuário altera os campos e salva. As mudanças são refletidas imediatamente na tabela.
+
+**Why this priority**: Necessário para manter dados de setores atualizados, mas pressupõe que a criação (P1) já existe.
+
+**Independent Test**: Editar nome ou gestor de um setor e verificar que a tabela reflete as mudanças após salvar.
+
+**Acceptance Scenarios**:
+
+1. **Given** o usuário clica no ícone de lápis, **Then** o drawer de edição abre com todos os campos pré-preenchidos.
+2. **Given** o usuário altera o nome e salva, **Then** o novo nome é refletido imediatamente na tabela.
+3. **Given** o usuário altera o status para desativado e salva, **Then** o toggle na tabela passa a mostrar estado desativado.
+
+---
+
+### User Story 18 — Excluir Setor (Priority: P2)
+
+O usuário clica no ícone de lixeira. Uma confirmação é solicitada. Ao confirmar, o setor é removido. Os profissionais vinculados permanecem no sistema, apenas sem setor associado.
+
+**Why this priority**: Necessário para manutenção de dados, mas não bloqueia o uso básico.
+
+**Independent Test**: Excluir um setor com profissionais vinculados e verificar que eles continuam existindo sem setor associado.
+
+**Acceptance Scenarios**:
+
+1. **Given** o usuário clica no ícone de lixeira, **Then** uma confirmação é exibida antes de qualquer exclusão.
+2. **Given** o usuário confirma a exclusão, **Then** o setor é removido e os profissionais vinculados permanecem na base sem setor.
+3. **Given** o usuário cancela a confirmação, **Then** nenhuma alteração é feita.
+
+---
+
+### User Story 19 — Pesquisar Setores por Nome (Priority: P3)
+
+O usuário digita no campo de busca da tela de Setores. A tabela filtra em tempo real mostrando apenas setores cujo nome contém o termo. Ao limpar a busca, todos os setores voltam a ser exibidos.
+
+**Why this priority**: Melhora a usabilidade para usuários com muitos setores, mas a feature funciona sem busca.
+
+**Acceptance Scenarios**:
+
+1. **Given** existem setores "Tecnologia", "Financeiro" e "Marketing", **When** o usuário digita "Tec", **Then** apenas "Tecnologia" é exibido.
+2. **Given** há um termo digitado, **When** o usuário limpa o campo, **Then** todos os setores voltam a ser exibidos.
+3. **Given** o usuário pesquisa um nome inexistente, **Then** uma mensagem "Nenhum setor encontrado" é exibida.
+
+---
+
+### Edge Cases (Parte 3)
+
+- Ao excluir um setor que era o único setor de um profissional, o profissional fica com `sector_id` nulo e continua acessível normalmente.
+- Se o gestor responsável de um setor for excluído do sistema, o campo gestor do setor fica vazio; o setor continua existindo.
+- Nomes de setores duplicados são permitidos (o usuário gerencia a nomenclatura).
+- A paginação aplica-se também aos resultados filtrados pela busca.
+
+---
+
+### Functional Requirements (Parte 3)
+
+**Navegação:**
+- **FR-041**: O sistema DEVE exibir sub-abas "Profissionais" e "Setores" na tela principal de RH → Profissionais.
+
+**Listagem:**
+- **FR-042**: O sistema DEVE exibir setores em tabela paginada (5 por página) com controles de navegação numéricos.
+- **FR-043**: A tabela DEVE exibir por linha: nome do setor (com ícone), contagem de colaboradores vinculados, foto e nome do gestor responsável, toggle de status e ações (editar, excluir).
+- **FR-044**: O sistema DEVE exibir apenas setores do usuário autenticado (isolamento por user_id).
+- **FR-045**: A contagem de colaboradores DEVE refletir em tempo real o número de profissionais com `sector_id` apontando para aquele setor.
+
+**Busca:**
+- **FR-046**: O sistema DEVE filtrar setores por nome em tempo real conforme o usuário digita.
+- **FR-047**: Ao limpar o campo de busca, o sistema DEVE restaurar a lista completa.
+
+**Criação:**
+- **FR-048**: Ao clicar em "+ Adicionar Setor", o sistema DEVE abrir um drawer lateral com campos: Nome (obrigatório), Status (toggle, ativo por padrão), Gestor Responsável (autocomplete de profissionais do usuário).
+- **FR-049**: O sistema DEVE persistir o setor e exibi-lo na listagem imediatamente após salvar com sucesso.
+- **FR-050**: O sistema DEVE bloquear o salvamento se o campo Nome estiver vazio.
+
+**Edição:**
+- **FR-051**: Ao clicar no ícone de lápis, o sistema DEVE abrir drawer de edição com dados atuais pré-preenchidos.
+- **FR-052**: As alterações DEVEM ser persistidas e refletidas na tabela imediatamente após salvar.
+
+**Exclusão:**
+- **FR-053**: O sistema DEVE solicitar confirmação antes de excluir um setor.
+- **FR-054**: Ao excluir um setor, o campo `sector_id` dos profissionais vinculados DEVE ser definido como nulo automaticamente (ON DELETE SET NULL). Os profissionais NÃO devem ser excluídos.
+
+**Segurança:**
+- **FR-055**: Todas as operações de leitura e escrita de setores DEVEM ser filtradas pelo `user_id` do usuário autenticado.
+- **FR-056**: Nenhum usuário pode visualizar, editar ou excluir setores de outros usuários.
+
+---
+
+### Key Entities (Parte 3)
+
+- **Setor**: Unidade organizacional criada pelo usuário. Atributos: id (UUID), user_id (FK → auth.users), name (texto, obrigatório), manager_id (UUID FK → profissionais, nullable), status (boolean — ativo/desativo), created_at, updated_at.
+- **Relacionamento Setor–Profissional**: Um setor tem zero ou muitos profissionais. Um profissional pertence a zero ou um setor. O vínculo é feito pelo campo `sector_id` (UUID FK nullable) na tabela de profissionais. Ao excluir um setor, `sector_id` dos profissionais vinculados é automaticamente definido como nulo.
+
+---
+
+### Success Criteria (Parte 3)
+
+- **SC-017**: Um gestor consegue criar um novo setor em menos de 60 segundos a partir da tela de Profissionais.
+- **SC-018**: A filtragem por nome retorna resultados visíveis em menos de 300ms após o usuário digitar.
+- **SC-019**: Ao excluir um setor com profissionais vinculados, 100% dos profissionais permanecem acessíveis sem perda de dados.
+- **SC-020**: A listagem paginada exibe corretamente 5 setores por página para qualquer quantidade de setores cadastrados.
+- **SC-021**: 100% das operações são restritas ao escopo do usuário autenticado — dados de outros usuários nunca são acessados.
+
+---
+
+### Assumptions (Parte 3)
+
+- O campo "Gestor Responsável" é opcional; um setor pode ser criado sem gestor definido.
+- A foto do gestor na tabela vem do perfil já existente do profissional no sistema.
+- O ícone do setor na tabela usa um conjunto fixo pré-definido pelo sistema (sem personalização nesta versão).
+- A confirmação de exclusão é um modal simples (não um segundo drawer).
+
+### Out of Scope (Parte 3)
+
+- Hierarquia de setores (sub-setores, árvore organizacional).
+- Importação/exportação de setores via CSV.
+- Histórico de alterações de setores.
+- Permissões diferenciadas por setor.
+- Vinculação profissional↔setor pela tela de Setores (gerenciado individualmente no perfil do profissional).

@@ -26,6 +26,81 @@ Todo novo componente deve seguir o design system do projeto: paleta de cores via
 ### VIII. Tradução Automática baseada no Sistema (NON-NEGOTIABLE)
 O sistema deve identificar automaticamente o idioma/localidade do computador do usuário e adaptar a interface e comunicações de acordo. A experiência inicial do usuário deve ser sempre no seu idioma nativo detectado, sem necessidade de configuração manual prévia.
 
+### IX. Verificação Baseada em Provas — Evidence-Based Execution (NON-NEGOTIABLE)
+Toda execução de tarefa, feature ou automação deve ser validada por evidências concretas (artefatos). Respostas baseadas apenas em descrição textual ou logs NÃO são consideradas suficientes.
+
+**O que é proibido:**
+- Declarar sucesso sem prova verificável
+- Confiar apenas em logs como evidência
+- Responder "feito" sem output real
+- Executar tarefas sem gerar evidências persistentes
+
+**O que é obrigatório:**
+
+1. **Geração de Artefatos** — Toda feature deve produzir pelo menos um dos seguintes: arquivos gerados (`.json`, `.pdf`, `.csv`, `.html`), screenshots da execução, logs estruturados, outputs de testes automatizados, ou respostas reais de APIs.
+
+2. **Validação da Execução** — A execução só é válida se: o resultado puder ser verificado externamente, o artefato for reproduzível, e houver evidência clara de funcionamento.
+
+3. **Testes Automatizados** — Sempre que possível: criar testes (unitários ou integração), executar após implementação, e retornar resultado como evidência.
+
+4. **Prova de Funcionamento** — Para cada feature implementada, incluir: o que foi feito, evidência concreta (artefato), e como validar manualmente (passo a passo).
+
+5. **Estrutura de Resposta Obrigatória** — Toda resposta de implementação deve seguir o formato:
+   - **## Status** (Sucesso / Falha)
+   - **## Implementação** (Resumo técnico)
+   - **## Artefatos Gerados** (Lista de arquivos, outputs, prints)
+   - **## Testes** (Resultado dos testes executados)
+   - **## Como Validar** (Passo a passo para verificação)
+   - **## Limitações / Observações** (Se houver)
+
+6. **Regra de Ouro** — Se não houver artefato verificável, a tarefa deve ser considerada incompleta.
+
+7. **Mentalidade Esperada** — O agente deve agir como engenheiro de software profissional, QA (garantia de qualidade) e auditor técnico. Objetivo: entregas confiáveis, auditáveis, reproduzíveis e baseadas em evidência real.
+
+---
+
+## Segurança e Ambientes Operacionais
+
+### 9. Separação de Ambientes
+Toda execução deve respeitar os ambientes: **DEV** (desenvolvimento local), **STAGING** (testes e validação), **PROD** (ambiente real de usuários).
+- Testes automatizados devem rodar apenas em DEV ou STAGING
+- Nunca executar testes destrutivos em PROD
+- Nunca alterar, excluir ou popular dados reais sem autorização explícita
+- Toda ação em PROD deve ser tratada como crítica
+
+### 10. Proteção de Dados Sensíveis
+É proibido expor em artefatos: senhas, tokens, chaves de API, dados bancários, CPF/RG/telefone/endereço, dados privados de usuários. Sempre mascarar ou anonimizar dados. Sempre usar dados fictícios em testes. Nunca incluir credenciais reais em screenshots, vídeos, logs ou código.
+
+### 11. Uso Seguro de Testes Automatizados
+Toda automação deve evitar: ações irreversíveis, exclusão em massa, envio de emails reais, pagamentos reais, consumo desnecessário de APIs externas. Se uma ação tiver potencial destrutivo, deve haver confirmação explícita antes da execução.
+
+### 12. Controle de Evidências
+Artefatos gerados devem: ser armazenados em local separado, organizados por data/feature/execução, não conter dados sensíveis, e poder ser removidos facilmente após auditoria.
+
+### 13. Logs Seguros
+Logs devem ser estruturados, evitar exposição de credenciais e stack traces desnecessárias em produção, e destacar erros críticos. Nunca registrar: senhas, tokens, headers de autenticação, cookies, dados privados.
+
+### 14. Regra de Segurança Máxima
+Se houver dúvida sobre risco, impacto ou exposição: não executar automaticamente, explicar o risco, solicitar confirmação explícita.
+
+### 15. Detecção Proativa de Vulnerabilidades
+Durante qualquer teste, implementação ou validação, buscar ativamente por: falhas de autenticação/autorização, exposição de rotas privadas, dados sensíveis expostos, campos sem validação, inputs vulneráveis a injeção, permissões excessivas, dependências vulneráveis, configurações inseguras, headers ausentes, armazenamento inseguro de credenciais, upload inseguro de arquivos, e possíveis falhas de XSS, SQL Injection, CSRF, SSRF e Path Traversal.
+
+### 16. Correção Obrigatória de Vulnerabilidades
+Se uma vulnerabilidade for identificada: explicar o risco, pedir permissão para corrigir, explicar a correção, gerar evidência, e executar novos testes. A vulnerabilidade só é considerada resolvida se houver prova de que não ocorre mais, teste cobrindo o caso, e evidência reproduzível da correção.
+
+### 17. Testes de Segurança Automatizados
+Sempre que possível, incluir testes validando: rotas protegidas, regras de permissão, sanitização de inputs, limite de uploads, validação de arquivos, expiração de sessão, controle de acesso, rate limiting, headers de segurança, e comportamento diante de payloads maliciosos.
+
+### 18. Dependências Vulneráveis
+Sempre verificar dependências em busca de vulnerabilidades conhecidas. Se houver dependências críticas vulneráveis: atualizar automaticamente quando seguro, informar impactos e possíveis breaking changes, e gerar relatório das vulnerabilidades encontradas.
+
+### 19. Regra de Segurança Crítica
+Nenhuma feature pode ser considerada concluída se houver vulnerabilidade crítica conhecida sem correção ou mitigação documentada.
+
+### 20. Headers e Configurações Seguras
+Verificar se a aplicação utiliza: `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Strict-Transport-Security`, `Referrer-Policy`, `SameSite` em cookies, `Secure` e `HttpOnly` em cookies, e HTTPS obrigatório.
+
 ---
 
 ## Restrições Técnicas
@@ -54,4 +129,4 @@ O sistema deve identificar automaticamente o idioma/localidade do computador do 
 
 Esta constituição tem precedência sobre qualquer outro padrão ou convenção do projeto. Alterações exigem documentação do motivo e revisão de impacto. Toda ambiguidade de implementação deve ser resolvida consultando este documento primeiro. Nenhum PR que viole os princípios I, II ou III deve ser aprovado.
 
-**Version**: 1.2.0 | **Ratificada**: 2026-03-16 | **Última Alteração**: 2026-03-17 (Adição de regra de tradução automática)
+**Version**: 1.3.0 | **Ratificada**: 2026-03-16 | **Última Alteração**: 2026-03-27 (Adição de princípio IX — Verificação Baseada em Provas e seção de Segurança e Ambientes Operacionais)

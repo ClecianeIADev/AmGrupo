@@ -1,8 +1,10 @@
-# am-grupo-erp Development Guidelines
+﻿# am-grupo-erp Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-24
+Auto-generated from all feature plans. Last updated: 2026-03-27
 
 ## Active Technologies
+- TypeScript 5.8 + React 19 + Supabase JS Client, Vite 6, Motion, Lucide React, Tailwind CSS v4 (003-rh-module)
+- PostgreSQL via Supabase (RLS habilitado) + Supabase Storage (fotos + documentos) (003-rh-module)
 
 - TypeScript 5.8 + React 19 + Vite 6 (frontend SPA)
 - Supabase (Auth, PostgreSQL, Storage, Edge Functions, Realtime)
@@ -85,17 +87,10 @@ supabase functions serve <name>    # Local Edge Function dev
 - `FolderWithProcessCount` — Folder + process count
 
 ## Recent Changes
+- 003-rh-module: Added TypeScript 5.8 + React 19 + Supabase JS Client, Vite 6, Motion, Lucide React, Tailwind CSS v4
 
 - 2026-03-24: Specification complete for 002-process-folders feature
 - 2026-03-24: Created database schema for `process_folders` table with RLS
-- 2026-03-24: **Scope adjustment** — 002-process-folders refocused to database integration only (~28-38 hours vs. original 53-66 hours)
-- 2026-03-24: UI screens for folder visualization already exist in layout — eliminated new component creation
-- 2026-03-24: Specification complete for 002-process-folders feature with reduced scope
-- 2026-03-24: Created database schema for `process_folders` table with RLS policies
-- 2026-03-24: Custom hooks planned (useFolders, useFolderContents, useFolderSearch)
-- 2026-03-24: Minimal component modifications required (ProcessDetailsModal, ProcessUploadDrawer
-- 2026-03-17: Installed DOMPurify for XSS protection on email HTML rendering
-- 2026-03-17: Auth session changed to sessionStorage (expires on browser close)
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

@@ -13,6 +13,20 @@ export function RHProfissionais({ onNavigate }: { onNavigate: (view: string) => 
   return (
     <main className="flex-1 overflow-y-auto p-6 lg:p-10 scroll-smooth bg-slate-50">
       <div className="max-w-[1600px] mx-auto flex flex-col gap-8">
+
+        {/* Sub-tabs */}
+        <div className="flex gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm w-fit">
+          <button className="px-5 py-2 rounded-lg text-sm font-semibold bg-primary text-white shadow-sm">
+            Profissionais
+          </button>
+          <button
+            onClick={() => onNavigate('rh-setores')}
+            className="px-5 py-2 rounded-lg text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+          >
+            Setores
+          </button>
+        </div>
+
         {/* Header/Filters */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="relative w-full md:w-96 group">
